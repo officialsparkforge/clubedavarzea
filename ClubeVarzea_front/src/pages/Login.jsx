@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { base44 } from '@/api/base44Client';
+import { getOrCreateAnonymousId } from '@/lib/utils';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -24,13 +26,55 @@ export default function Login() {
   const [resetPasswordValue, setResetPasswordValue] = useState('');
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
 
+  const migrateAnonymousCartToUser = async (userEmail) => {
+    if (!userEmail) return;
+
+    const anonymousId = getOrCreateAnonymousId();
+    if (!anonymousId || anonymousId === userEmail) return;
+
+    const anonymousItems = await base44.entities.CartItem.filter({ created_by: anonymousId });
+    if (!anonymousItems.length) return;
+
+    for (const anonymousItem of anonymousItems) {
+      const existingUserItems = await base44.entities.CartItem.filter({
+        created_by: userEmail,
+        product_id: anonymousItem.product_id,
+        size: anonymousItem.size,
+      });
+
+      if (existingUserItems.length > 0) {
+        await base44.entities.CartItem.update(existingUserItems[0].id, {
+          quantity: (existingUserItems[0].quantity || 0) + (anonymousItem.quantity || 1),
+        });
+      } else {
+        await base44.entities.CartItem.create({
+          created_by: userEmail,
+          product_id: anonymousItem.product_id,
+          name: anonymousItem.name,
+          team: anonymousItem.team,
+          size: anonymousItem.size,
+          quantity: anonymousItem.quantity || 1,
+          price: anonymousItem.price,
+          image_url: anonymousItem.image_url,
+        });
+      }
+
+      await base44.entities.CartItem.delete(anonymousItem.id);
+    }
+  };
+
   const handleSubmitLogin = async (e) => {
     e.preventDefault();
     setLocalError('');
     setInfoMessage('');
 
     try {
-      await login(email, password);
+      const loggedUser = await login(email, password);
+      try {
+        await migrateAnonymousCartToUser(loggedUser?.email);
+      } catch (migrationError) {
+        console.error('Erro ao migrar carrinho anônimo no login:', migrationError);
+      }
       navigate(redirectTo);
     } catch (error) {
       setLocalError(error.message);
@@ -43,7 +87,12 @@ export default function Login() {
     setInfoMessage('');
 
     try {
-      await register(name, email, password);
+      const registeredUser = await register(name, email, password);
+      try {
+        await migrateAnonymousCartToUser(registeredUser?.email);
+      } catch (migrationError) {
+        console.error('Erro ao migrar carrinho anônimo no registro:', migrationError);
+      }
       navigate(redirectTo);
     } catch (error) {
       setLocalError(error.message);
