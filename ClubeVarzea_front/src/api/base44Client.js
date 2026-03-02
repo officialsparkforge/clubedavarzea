@@ -1,4 +1,21 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const RAW_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const resolveApiUrl = () => {
+  if (typeof window === 'undefined') {
+    return RAW_API_URL;
+  }
+
+  const isHttpsPage = window.location.protocol === 'https:';
+  const isInsecureConfiguredApi = RAW_API_URL.startsWith('http://');
+
+  if (isHttpsPage && isInsecureConfiguredApi) {
+    return window.location.origin;
+  }
+
+  return RAW_API_URL;
+};
+
+const API_URL = resolveApiUrl();
 
 const getStoredUser = () => {
   try {

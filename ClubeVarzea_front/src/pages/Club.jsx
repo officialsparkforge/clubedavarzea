@@ -155,8 +155,7 @@ export default function Club() {
     if (cep.replace(/\D/g, '').length === 8) {
       setLoadingCep(true);
       try {
-        const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        const result = await axios.get(`${apiBaseUrl}/api/cep/${cep.replace(/\D/g, '')}`);
+        const result = await axios.get(`/api/cep/${cep.replace(/\D/g, '')}`);
         const data = result.data;
         
         if (!data.erro) {
