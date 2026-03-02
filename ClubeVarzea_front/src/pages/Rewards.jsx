@@ -32,9 +32,22 @@ export default function Rewards() {
 
   const myReferral = referrals.find(r => r.created_by === user?.email) || null;
 
+  // Gera código determinístico baseado apenas no email (não muda nunca)
+  const generateReferralCode = (email) => {
+    if (!email) return '';
+    // Hash simples do email para gerar sempre o mesmo código
+    let hash = 0;
+    for (let i = 0; i < email.length; i++) {
+      hash = ((hash << 5) - hash) + email.charCodeAt(i);
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    const hashStr = Math.abs(hash).toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
+    return `VARZEA${hashStr}`;
+  };
+
   const createReferralMutation = useMutation({
     mutationFn: async () => {
-      const code = `VARZEA${user?.email.substring(0, 3).toUpperCase()}${Date.now().toString(36).toUpperCase().slice(-4)}`;
+      const code = generateReferralCode(user?.email);
       return await base44.entities.Referral.create({
         referral_code: code,
         total_sales: 0,
@@ -47,6 +60,13 @@ export default function Rewards() {
     onSuccess: () => {
       queryClient.invalidateQueries(['referrals']);
       toast.success('Código de referência criado!');
+    },
+    onError: (error) => {
+      console.error('Erro ao criar código:', error);
+      // Não mostrar erro se já existir
+      if (!error.message?.includes('já existe')) {
+        toast.error('Erro ao criar código de referência');
+      }
     },
   });
 

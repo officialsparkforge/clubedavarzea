@@ -81,6 +81,34 @@ export default function Login() {
     }
   };
 
+  // Gera código de referência determinístico
+  const generateReferralCode = (email) => {
+    if (!email) return '';
+    let hash = 0;
+    for (let i = 0; i < email.length; i++) {
+      hash = ((hash << 5) - hash) + email.charCodeAt(i);
+      hash = hash & hash;
+    }
+    const hashStr = Math.abs(hash).toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
+    return `VARZEA${hashStr}`;
+  };
+
+  const createReferralCode = async (userEmail) => {
+    try {
+      const code = generateReferralCode(userEmail);
+      await base44.entities.Referral.create({
+        referral_code: code,
+        total_sales: 0,
+        total_points: 0,
+        level: 1,
+        level_name: 'Bronze',
+        referred_orders: [],
+      });
+    } catch (error) {
+      console.log('Código de referência não criado (pode já existir):', error.message);
+    }
+  };
+
   const handleSubmitRegister = async (e) => {
     e.preventDefault();
     setLocalError('');
@@ -90,6 +118,8 @@ export default function Login() {
       const registeredUser = await register(name, email, password);
       try {
         await migrateAnonymousCartToUser(registeredUser?.email);
+        // Criar código de referência automaticamente no registro
+        await createReferralCode(registeredUser?.email);
       } catch (migrationError) {
         console.error('Erro ao migrar carrinho anônimo no registro:', migrationError);
       }

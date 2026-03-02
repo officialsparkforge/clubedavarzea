@@ -66,10 +66,12 @@ export default function AdminProducts() {
     }
   };
 
-  const filteredProducts = products.filter(p =>
-    p.nome.toLowerCase().includes(search.toLowerCase()) ||
-    p.team.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredProducts = products
+    .filter(p =>
+      p.nome.toLowerCase().includes(search.toLowerCase()) ||
+      p.team.toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => a.nome.localeCompare(b.nome));
 
   return (
     <div className="min-h-screen bg-[#0A0A0A]">

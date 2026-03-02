@@ -32,7 +32,7 @@ export default function Shop() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [priceRange, setPriceRange] = useState([0, 500]);
-  const [sortBy, setSortBy] = useState('recent');
+  const [sortBy, setSortBy] = useState('name');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const queryClient = useQueryClient();
 

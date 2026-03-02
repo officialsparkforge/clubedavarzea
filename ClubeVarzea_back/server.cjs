@@ -1430,6 +1430,29 @@ app.post('/api/referrals', async (req, res) => {
     }
 
     const connection = await pool.getConnection();
+    
+    // Verificar se já existe um referral para este usuário
+    const [existing] = await connection.query(
+      'SELECT id FROM referrals WHERE created_by = ?',
+      [createdBy]
+    );
+
+    if (existing.length > 0) {
+      connection.release();
+      return res.status(400).json({ error: 'Usuário já possui código de referência' });
+    }
+
+    // Verificar se o código já está em uso
+    const [codeExists] = await connection.query(
+      'SELECT id FROM referrals WHERE referral_code = ?',
+      [referral_code]
+    );
+
+    if (codeExists.length > 0) {
+      connection.release();
+      return res.status(400).json({ error: 'Código de referência já existe' });
+    }
+
     const id = uuidv4();
     await connection.query(
       `INSERT INTO referrals (id, created_by, referral_code, total_sales, total_points, level, level_name, referred_orders)

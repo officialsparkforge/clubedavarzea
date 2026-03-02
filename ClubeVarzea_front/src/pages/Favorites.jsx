@@ -31,7 +31,9 @@ export default function Favorites() {
   });
 
   const favoriteIds = favorites.map(f => f.product_id);
-  const favoriteProducts = products.filter(p => favoriteIds.includes(p.id));
+  const favoriteProducts = products
+    .filter(p => favoriteIds.includes(p.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const isLoading = loadingFavorites || loadingProducts;
 

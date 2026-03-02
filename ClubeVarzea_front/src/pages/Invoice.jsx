@@ -1,18 +1,24 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { ArrowLeft, Download, Printer, Package, Truck, CreditCard, MapPin } from 'lucide-react';
+import { ArrowLeft, Download, Printer, Package, Truck, CreditCard, MapPin, Gift, Copy } from 'lucide-react';
 import NeonButton from '@/components/ui/NeonButton';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { base44 } from '@/api/base44Client';
+import { toast } from 'sonner';
 
 export default function Invoice() {
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get('orderId');
   const navigate = useNavigate();
   const invoiceRef = useRef(null);
+
+  const { data: user } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => base44.auth.me(),
+  });
 
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', orderId],
@@ -22,6 +28,25 @@ export default function Invoice() {
     },
     enabled: !!orderId,
   });
+
+  const { data: allOrders = [] } = useQuery({
+    queryKey: ['userOrders', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return [];
+      const orders = await base44.entities.Order.filter({ created_by: user.email });
+      return orders;
+    },
+    enabled: !!user?.email,
+  });
+
+  const { data: referrals = [] } = useQuery({
+    queryKey: ['referrals', user?.email],
+    queryFn: () => base44.entities.Referral.list(),
+    enabled: !!user?.email,
+  });
+
+  const myReferral = referrals.find(r => r.created_by === user?.email);
+  const isFirstOrder = allOrders.length === 1;
 
   const handlePrint = () => {
     window.print();
@@ -51,6 +76,15 @@ export default function Invoice() {
     sedex: 'Sedex',
     transportadora: 'Transportadora',
     retirada: 'Retirada na Loja',
+  };
+
+  const handleCopyReferralCode = () => {
+    if (myReferral?.referral_code) {
+      navigator.clipboard.writeText(myReferral.referral_code);
+      toast.success('Código copiado!', {
+        description: 'Compartilhe com seus amigos e ganhe recompensas'
+      });
+    }
   };
 
   return (
@@ -227,6 +261,43 @@ export default function Invoice() {
             Rastrear
           </NeonButton>
         </div>
+
+        {/* Referral Code - Show on first purchase */}
+        {isFirstOrder && myReferral?.referral_code && (
+          <div className="mt-6 bg-gradient-to-r from-[#00FF85]/10 to-transparent rounded-2xl border border-[#00FF85]/30 p-6 print:hidden">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-[#00FF85]/20 rounded-full">
+                <Gift className="w-6 h-6 text-[#00FF85]" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-white mb-2">
+                  🎉 Parabéns pela sua primeira compra!
+                </h3>
+                <p className="text-sm text-[#888] mb-4">
+                  Compartilhe seu código de indicação com amigos e ganhe <span className="text-[#00FF85] font-semibold">R$ 10 de cashback</span> a cada compra que eles fizerem!
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
+                    <p className="text-xs text-[#888] mb-1">Seu código de indicação</p>
+                    <p className="text-xl font-bold text-[#00FF85] font-mono tracking-wider">
+                      {myReferral.referral_code}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleCopyReferralCode}
+                    className="p-3 bg-[#00FF85]/20 hover:bg-[#00FF85]/30 rounded-lg transition-colors border border-[#00FF85]/30"
+                    title="Copiar código"
+                  >
+                    <Copy className="w-5 h-5 text-[#00FF85]" />
+                  </button>
+                </div>
+                <p className="text-xs text-[#888] mt-3">
+                  💡 Dica: Acesse a página <span className="text-[#00FF85]">Recompensas</span> para ver seu histórico de indicações e ganhos
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
