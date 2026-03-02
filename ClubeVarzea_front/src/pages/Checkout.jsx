@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { cn } from "@/lib/utils";
+import { cn, getOrCreateAnonymousId } from "@/lib/utils";
 import axios from 'axios';
 import { base44 } from '@/api/base44Client';
 
@@ -35,6 +35,7 @@ export default function Checkout() {
   const [loadingCep, setLoadingCep] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -59,6 +60,42 @@ export default function Checkout() {
       try {
         const currentUser = await base44.auth.me();
         if (!active) return;
+
+        const userEmail = currentUser?.email || '';
+        setCurrentUserEmail(userEmail);
+
+        // Migrar carrinho anônimo para a conta logada (evita perder itens no checkout)
+        const anonId = getOrCreateAnonymousId();
+        if (userEmail && anonId && anonId !== userEmail) {
+          const anonymousItems = await base44.entities.CartItem.filter({ created_by: anonId });
+
+          for (const anonymousItem of anonymousItems) {
+            const existingUserItems = await base44.entities.CartItem.filter({
+              created_by: userEmail,
+              product_id: anonymousItem.product_id,
+              size: anonymousItem.size,
+            });
+
+            if (existingUserItems.length > 0) {
+              await base44.entities.CartItem.update(existingUserItems[0].id, {
+                quantity: (existingUserItems[0].quantity || 0) + (anonymousItem.quantity || 1),
+              });
+            } else {
+              await base44.entities.CartItem.create({
+                created_by: userEmail,
+                product_id: anonymousItem.product_id,
+                name: anonymousItem.name,
+                team: anonymousItem.team,
+                size: anonymousItem.size,
+                quantity: anonymousItem.quantity || 1,
+                price: anonymousItem.price,
+                image_url: anonymousItem.image_url,
+              });
+            }
+
+            await base44.entities.CartItem.delete(anonymousItem.id);
+          }
+        }
 
         setFormData((prev) => ({
           ...prev,
@@ -92,8 +129,12 @@ export default function Checkout() {
   }, [navigate]);
 
   const { data: cartItems = [] } = useQuery({
-    queryKey: ['cart'],
-    queryFn: () => base44.entities.CartItem.list(),
+    queryKey: ['cart', 'checkout', currentUserEmail],
+    queryFn: async () => {
+      if (!currentUserEmail) return [];
+      return base44.entities.CartItem.filter({ created_by: currentUserEmail });
+    },
+    enabled: !checkingAuth,
   });
 
   const { data: coupons = [] } = useQuery({
