@@ -44,6 +44,26 @@ const getUserIdentifier = (req) => {
   return getAnonymousId(req) || null;
 };
 
+const getCartColumnMap = async (connection) => {
+  const [columnsRows] = await connection.query('SHOW COLUMNS FROM cart_items');
+  const available = new Set(columnsRows.map((row) => row.Field));
+
+  const pick = (preferred, legacy) => {
+    if (available.has(preferred)) return preferred;
+    if (legacy && available.has(legacy)) return legacy;
+    return null;
+  };
+
+  return {
+    name: pick('name', 'nome'),
+    team: pick('team', 'time'),
+    size: pick('size', 'tamanho'),
+    quantity: pick('quantity', 'quantidade'),
+    price: pick('price', 'preco'),
+    image_url: pick('image_url', 'imagem_url'),
+  };
+};
+
 // Pool de conexoes MySQL
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -1105,6 +1125,7 @@ app.get('/api/cart-items', async (req, res) => {
     const { product_id, size } = req.query;
     const createdBy = getUserIdentifier(req);
     const connection = await pool.getConnection();
+    const columnMap = await getCartColumnMap(connection);
     const filters = [];
     const params = [];
 
@@ -1118,14 +1139,25 @@ app.get('/api/cart-items', async (req, res) => {
       params.push(product_id);
     }
 
-    if (size) {
-      filters.push('size = ?');
+    if (size && columnMap.size) {
+      filters.push(`${columnMap.size} = ?`);
       params.push(size);
+    } else if (size && !columnMap.size) {
+      connection.release();
+      return res.json([]);
     }
 
     const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const nameSelect = columnMap.name ? `${columnMap.name} AS name` : `NULL AS name`;
+    const teamSelect = columnMap.team ? `${columnMap.team} AS team` : `NULL AS team`;
+    const sizeSelect = columnMap.size ? `${columnMap.size} AS size` : `NULL AS size`;
+    const quantitySelect = columnMap.quantity ? `${columnMap.quantity} AS quantity` : `1 AS quantity`;
+    const priceSelect = columnMap.price ? `${columnMap.price} AS price` : `0 AS price`;
+    const imageSelect = columnMap.image_url ? `${columnMap.image_url} AS image_url` : `NULL AS image_url`;
+
     const [rows] = await connection.query(
-      `SELECT * FROM cart_items ${whereClause} ORDER BY created_at DESC`,
+      `SELECT id, created_by, product_id, ${nameSelect}, ${teamSelect}, ${sizeSelect}, ${quantitySelect}, ${priceSelect}, ${imageSelect}, created_at, updated_at
+       FROM cart_items ${whereClause} ORDER BY created_at DESC`,
       params
     );
     connection.release();
@@ -1145,11 +1177,41 @@ app.post('/api/cart-items', async (req, res) => {
     }
 
     const connection = await pool.getConnection();
+    const columnMap = await getCartColumnMap(connection);
     const id = uuidv4();
+
+    const insertColumns = ['id', 'created_by', 'product_id'];
+    const insertValues = [id, createdBy, product_id];
+
+    if (columnMap.name) {
+      insertColumns.push(columnMap.name);
+      insertValues.push(name);
+    }
+    if (columnMap.team) {
+      insertColumns.push(columnMap.team);
+      insertValues.push(team || null);
+    }
+    if (columnMap.size) {
+      insertColumns.push(columnMap.size);
+      insertValues.push(size || null);
+    }
+    if (columnMap.quantity) {
+      insertColumns.push(columnMap.quantity);
+      insertValues.push(quantity || 1);
+    }
+    if (columnMap.price) {
+      insertColumns.push(columnMap.price);
+      insertValues.push(price);
+    }
+    if (columnMap.image_url) {
+      insertColumns.push(columnMap.image_url);
+      insertValues.push(image_url || null);
+    }
+
+    const placeholders = insertColumns.map(() => '?').join(', ');
     await connection.query(
-      `INSERT INTO cart_items (id, created_by, product_id, name, team, size, quantity, price, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, createdBy, product_id, name, team || null, size || null, quantity || 1, price, image_url || null]
+      `INSERT INTO cart_items (${insertColumns.join(', ')}) VALUES (${placeholders})`,
+      insertValues
     );
     connection.release();
     res.json({ id, message: 'Item adicionado ao carrinho' });
@@ -1163,8 +1225,10 @@ app.put('/api/cart-items/:id', async (req, res) => {
     const { id } = req.params;
     const { quantity } = req.body;
     const connection = await pool.getConnection();
+    const columnMap = await getCartColumnMap(connection);
+    const quantityColumn = columnMap.quantity || 'quantity';
     await connection.query(
-      'UPDATE cart_items SET quantity = ?, updated_at = NOW() WHERE id = ?',
+      `UPDATE cart_items SET ${quantityColumn} = ?, updated_at = NOW() WHERE id = ?`,
       [quantity, id]
     );
     connection.release();
