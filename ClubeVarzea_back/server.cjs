@@ -56,6 +56,63 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
+// =============== CEP (VIACEP PROXY) ===============
+
+app.get('/api/cep/:cep', async (req, res) => {
+  const cep = String(req.params.cep || '').replace(/\D/g, '');
+
+  if (cep.length !== 8) {
+    return res.status(400).json({ error: 'CEP inválido' });
+  }
+
+  const providers = [
+    {
+      name: 'viacep',
+      request: () => axios.get(`https://viacep.com.br/ws/${cep}/json/`, { timeout: 10000 }),
+      map: (data) => {
+        if (data?.erro) return null;
+        return data;
+      },
+    },
+    {
+      name: 'brasilapi',
+      request: () => axios.get(`https://brasilapi.com.br/api/cep/v1/${cep}`, { timeout: 10000 }),
+      map: (data) => {
+        if (!data) return null;
+        return {
+          cep: data.cep,
+          logradouro: data.street,
+          complemento: data.service,
+          bairro: data.neighborhood,
+          localidade: data.city,
+          uf: data.state,
+        };
+      },
+    },
+  ];
+
+  try {
+    for (const provider of providers) {
+      try {
+        const response = await provider.request();
+        const normalized = provider.map(response.data);
+
+        if (!normalized) {
+          continue;
+        }
+
+        return res.json(normalized);
+      } catch (providerError) {
+        console.error(`[CEP] Falha no provedor ${provider.name}:`, providerError.message);
+      }
+    }
+
+    return res.status(502).json({ error: 'Falha ao consultar CEP' });
+  } catch (error) {
+    return res.status(502).json({ error: 'Falha ao consultar CEP' });
+  }
+});
+
 // =============== PRODUTOS ===============
 
 // GET - Listar todos os produtos

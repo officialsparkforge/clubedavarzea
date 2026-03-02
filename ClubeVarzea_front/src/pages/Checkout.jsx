@@ -129,7 +129,8 @@ export default function Checkout() {
   const fetchCepData = async (cep) => {
     setLoadingCep(true);
     try {
-      const result = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+      const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const result = await axios.get(`${apiBaseUrl}/api/cep/${cep}`);
       const data = result.data;
       
       if (!data.erro) {

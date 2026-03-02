@@ -155,7 +155,8 @@ export default function Club() {
     if (cep.replace(/\D/g, '').length === 8) {
       setLoadingCep(true);
       try {
-        const result = await axios.get(`https://viacep.com.br/ws/${cep.replace(/\D/g, '')}/json/`);
+        const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const result = await axios.get(`${apiBaseUrl}/api/cep/${cep.replace(/\D/g, '')}`);
         const data = result.data;
         
         if (!data.erro) {
