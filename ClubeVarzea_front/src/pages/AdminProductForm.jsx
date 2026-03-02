@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { produtosAPI, timesAPI } from '@/lib/api';
+import { produtosAPI, timesAPI, categoriasAPI } from '@/lib/api';
 import { ArrowLeft, Upload, X, Loader2, GripVertical, ImagePlus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ export default function AdminProductForm() {
     id: productId || '',
     name: '',
     team: '',
-    category: 'brasileirao',
+    category: '',
     season: '2024/25',
     version: 'torcedor',
     price: '',
@@ -47,14 +47,19 @@ export default function AdminProductForm() {
     stock: 10,
   });
   const [teams, setTeams] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Carregar times e produto para edição
+  // Carregar categorias, times e produto para edição
   useEffect(() => {
     const loadData = async () => {
       try {
-        const timesData = await timesAPI.listar();
+        const [timesData, categoriasData] = await Promise.all([
+          timesAPI.listar(),
+          categoriasAPI.listar()
+        ]);
         setTeams(timesData);
+        setCategories(categoriasData);
 
         if (isEdit && productId) {
           const products = await produtosAPI.listar();
@@ -206,7 +211,13 @@ export default function AdminProductForm() {
     }
   };
 
-  const uniqueTeams = teams.map((team) => (typeof team === 'string' ? team : team.nome));
+  // Filtrar times pela categoria selecionada
+  const filteredTeams = teams.filter(team => {
+    if (!formData.category) return false;
+    return team.categoria_id === formData.category;
+  });
+  
+  const uniqueTeams = filteredTeams.map((team) => (typeof team === 'string' ? team : team.nome));
 
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
@@ -330,47 +341,58 @@ export default function AdminProductForm() {
               />
             </div>
 
-            <div>
-              <Label htmlFor="team" className="text-white">Time</Label>
-              <Select 
-                value={formData.team} 
-                onValueChange={(value) => {
-                  if (value === '__new__') {
-                    const newTeam = prompt('Digite o nome do time:');
-                    if (newTeam) setFormData({ ...formData, team: newTeam });
-                  } else {
-                    setFormData({ ...formData, team: value });
-                  }
-                }}
-              >
-                <SelectTrigger className="bg-white border-[#2a2a2a] text-black">
-                  <SelectValue placeholder="Selecione um time" />
-                </SelectTrigger>
-                <SelectContent className="bg-white border-[#2a2a2a] text-black">
-                  {uniqueTeams.map(team => (
-                    <SelectItem key={team} value={team} className="text-black">{team}</SelectItem>
-                  ))}
-                  <SelectItem value="__new__" className="text-[#00FF85] font-bold">+ Adicionar novo time</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="category" className="text-white">Categoria</Label>
-                <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+                <Label htmlFor="category" className="text-white">Categoria *</Label>
+                <Select 
+                  value={formData.category} 
+                  onValueChange={(value) => setFormData({ ...formData, category: value, team: '' })}
+                >
                   <SelectTrigger className="bg-white border-[#2a2a2a] text-black">
-                    <SelectValue />
+                    <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-[#2a2a2a]">
-                    <SelectItem value="brasileirao" className="text-black">Brasileirão</SelectItem>
-                    <SelectItem value="europeus" className="text-black">Europeus</SelectItem>
-                    <SelectItem value="selecoes" className="text-black">Seleções</SelectItem>
-                    <SelectItem value="raros" className="text-black">Raros</SelectItem>
-                    <SelectItem value="personalizadas" className="text-black">Personalizadas</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.id} className="text-black">{cat.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              <div>
+                <Label htmlFor="team" className="text-white">Time *</Label>
+                <Select 
+                  value={formData.team} 
+                  onValueChange={(value) => {
+                    if (value === '__new__') {
+                      const newTeam = prompt('Digite o nome do time:');
+                      if (newTeam) setFormData({ ...formData, team: newTeam });
+                    } else {
+                      setFormData({ ...formData, team: value });
+                    }
+                  }}
+                  disabled={!formData.category}
+                >
+                  <SelectTrigger className="bg-white border-[#2a2a2a] text-black disabled:opacity-50">
+                    <SelectValue placeholder={formData.category ? "Selecione o time" : "Selecione categoria primeiro"} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-[#2a2a2a] text-black">
+                    {uniqueTeams.length === 0 ? (
+                      <SelectItem value="__empty__" disabled className="text-[#888]">Nenhum time nesta categoria</SelectItem>
+                    ) : (
+                      uniqueTeams.map(team => (
+                        <SelectItem key={team} value={team} className="text-black">{team}</SelectItem>
+                      ))
+                    )}
+                    {formData.category && (
+                      <SelectItem value="__new__" className="text-[#00FF85] font-bold">+ Adicionar novo time</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
 
               <div>
                 <Label htmlFor="version" className="text-white">Versão</Label>

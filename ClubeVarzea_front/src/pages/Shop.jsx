@@ -11,21 +11,23 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { base44 } from '@/api/base44Client';
+import { categoriasAPI } from '@/lib/api';
 
-const categories = [
-  { id: 'all', label: 'Todos', icon: Sparkles },
-  { id: 'brasileirao', label: 'Brasileirão', icon: Trophy },
-  { id: 'europeus', label: 'Europeus', icon: Globe },
-  { id: 'selecoes', label: 'Seleções', icon: Star },
-  { id: 'raros', label: 'Raros', icon: Shirt },
-  { id: 'personalizadas', label: 'Personalizadas', icon: Shirt },
-];
+// Mapeamento de ícones para categorias
+const iconMap = {
+  brasileirao: Trophy,
+  europeus: Globe,
+  selecoes: Star,
+  raros: Shirt,
+  personalizadas: Shirt,
+  default: Shirt,
+};
 
 const sortOptions = [
   { id: 'recent', label: 'Mais recentes' },
   { id: 'price_asc', label: 'Menor preço' },
   { id: 'price_desc', label: 'Maior preço' },
-  { id: 'name', label: 'Nome A-Z' },
+  { id: 'name', label: 'Time A-Z' },
 ];
 
 export default function Shop() {
@@ -35,6 +37,21 @@ export default function Shop() {
   const [sortBy, setSortBy] = useState('name');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const queryClient = useQueryClient();
+
+  const { data: dbCategories = [], isLoading: loadingCategories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriasAPI.listar(),
+  });
+
+  // Criar lista de categorias com ícones
+  const categories = [
+    { id: 'all', label: 'Todos', icon: Sparkles },
+    ...dbCategories.map(cat => ({
+      id: cat.id,
+      label: cat.label,
+      icon: iconMap[cat.id] || iconMap.default,
+    }))
+  ];
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ['products'],
@@ -76,8 +93,8 @@ export default function Shop() {
     switch (sortBy) {
       case 'price_asc': return a.price - b.price;
       case 'price_desc': return b.price - a.price;
-      case 'name': return a.name.localeCompare(b.name);
-      default: return 0;
+      case 'name': return a.team.localeCompare(b.team);
+      default: return a.team.localeCompare(b.team);
     }
   });
 

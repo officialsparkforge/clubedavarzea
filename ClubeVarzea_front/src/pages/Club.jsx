@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from "@/lib/utils";
 import axios from 'axios';
 import { base44 } from '@/api/base44Client';
+import { categoriasAPI } from '@/lib/api';
 
 const frequencies = [
   { id: 'monthly', label: 'Mensal', description: 'Box a cada mês', deliveries: 12 },
@@ -34,6 +35,12 @@ export default function Club() {
   const [showCheckout, setShowCheckout] = useState(false);
   const [frequency, setFrequency] = useState('monthly');
   const [loadingCep, setLoadingCep] = useState(false);
+
+  const { data: dbCategories = [] } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriasAPI.listar(),
+  });
+  
   const [formData, setFormData] = useState({
     street: '',
     number: '',
@@ -426,18 +433,18 @@ export default function Club() {
                     <div>
                       <Label className="text-sm text-[#888] mb-2 block">Categorias Favoritas (opcional)</Label>
                       <div className="flex gap-2 flex-wrap">
-                        {['brasileirao', 'europeus', 'selecoes', 'raros'].map(cat => (
+                        {dbCategories.map(cat => (
                           <button
-                            key={cat}
-                            onClick={() => toggleCategory(cat)}
+                            key={cat.id}
+                            onClick={() => toggleCategory(cat.id)}
                             className={cn(
                               "px-3 py-2 rounded-lg text-xs font-medium transition-all border",
-                              formData.preferred_categories.includes(cat)
+                              formData.preferred_categories.includes(cat.id)
                                 ? "bg-[#00FF85]/20 text-[#00FF85] border-[#00FF85]"
                                 : "bg-[#1a1a1a] text-white border-[#2a2a2a]"
                             )}
                           >
-                            {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            {cat.label}
                           </button>
                         ))}
                       </div>

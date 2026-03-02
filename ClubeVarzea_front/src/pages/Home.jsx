@@ -11,6 +11,17 @@ import ProductCarousel from '@/components/ProductCarousel';
 import NeonButton from '@/components/ui/NeonButton';
 import { motion } from 'framer-motion';
 import { base44 } from '@/api/base44Client';
+import { categoriasAPI } from '@/lib/api';
+
+// Mapeamento de ícones para categorias
+const iconMap = {
+  brasileirao: Trophy,
+  europeus: Globe,
+  selecoes: Star,
+  raros: Shirt,
+  personalizadas: Shirt,
+  default: Shirt,
+};
 
 function PromoCountdown() {
   const [timeLeft, setTimeLeft] = useState({ days: 7, hours: 12, minutes: 30, seconds: 0 });
@@ -50,19 +61,26 @@ function PromoCountdown() {
   );
 }
 
-const categories = [
-  { id: 'all', label: 'Todos', icon: Sparkles },
-  { id: 'brasileirao', label: 'Brasileirão', icon: Trophy },
-  { id: 'europeus', label: 'Europeus', icon: Globe },
-  { id: 'selecoes', label: 'Seleções', icon: Star },
-  { id: 'raros', label: 'Raros', icon: Shirt },
-];
-
 export default function Home() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
+
+  const { data: dbCategories = [], isLoading: loadingCategories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriasAPI.listar(),
+  });
+
+  // Criar lista de categorias com ícones
+  const categories = [
+    { id: 'all', label: 'Todos', icon: Sparkles },
+    ...dbCategories.map(cat => ({
+      id: cat.id,
+      label: cat.label,
+      icon: iconMap[cat.id] || iconMap.default,
+    }))
+  ];
   const navigate = useNavigate();
   const urlParams = new URLSearchParams(window.location.search);
   const referralCode = urlParams.get('ref');
