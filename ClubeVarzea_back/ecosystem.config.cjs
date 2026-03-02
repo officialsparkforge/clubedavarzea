@@ -5,10 +5,6 @@ module.exports = {
     script: './server.cjs',
     instances: 1,
     exec_mode: 'fork',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 13008
-    },
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
     log_file: './logs/pm2-combined.log',

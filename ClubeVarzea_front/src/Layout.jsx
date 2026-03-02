@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
+import { base44 } from '@/api/base44Client';
 import BottomNav from '@/components/ui/BottomNav';
 import { LogOut, Settings, Package, LayoutGrid } from 'lucide-react';
 
@@ -8,7 +10,21 @@ export default function Layout({ children, currentPageName }) {
   const navigate = useNavigate();
   const { user, isAdmin, logout } = useAuth();
   const hideNav = ['Checkout', 'Payment', 'Invoice', 'Tracking'].includes(currentPageName);
-  const cartCount = 0;
+  
+  const { data: cartItems = [] } = useQuery({
+    queryKey: ['cart'],
+    queryFn: async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        if (!currentUser?.email) return [];
+        return base44.entities.CartItem.filter({ created_by: currentUser.email });
+      } catch {
+        return [];
+      }
+    },
+  });
+  
+  const cartCount = cartItems?.length || 0;
 
   const handleLogout = () => {
     logout();

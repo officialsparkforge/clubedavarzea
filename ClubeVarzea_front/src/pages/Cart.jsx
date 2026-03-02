@@ -22,7 +22,11 @@ export default function Cart() {
 
   const { data: cartItems = [], isLoading } = useQuery({
     queryKey: ['cart'],
-    queryFn: () => base44.entities.CartItem.list(),
+    queryFn: async () => {
+      const user = await base44.auth.me();
+      if (!user?.email) return [];
+      return base44.entities.CartItem.filter({ created_by: user.email });
+    },
   });
 
   const { data: coupons = [] } = useQuery({

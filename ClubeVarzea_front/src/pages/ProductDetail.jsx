@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { ArrowLeft, Heart, Minus, Plus, ShoppingCart, Star, Truck, Shield, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Heart, Minus, Plus, ShoppingCart, Star, Truck, Shield, RotateCcw, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import NeonButton from '@/components/ui/NeonButton';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -43,12 +43,33 @@ export default function ProductDetail() {
   const [showReviews, setShowReviews] = useState(false);
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [isFirstAddition, setIsFirstAddition] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product', productId],
     queryFn: async () => {
       const products = await base44.entities.Product.filter({ id: productId });
-      return products[0];
+      const product = products[0];
+      
+      // Processar imagens - suportar tanto o campo novo (images) quanto o antigo (image_url)
+      if (product) {
+        if (product.images) {
+          product.productImages = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
+        } else if (product.image_url) {
+          product.productImages = [product.image_url];
+        } else {
+          product.productImages = [];
+        }
+        
+        // Processar tamanhos (vem como JSON string do banco)
+        if (product.tamanhos) {
+          product.sizes = typeof product.tamanhos === 'string' ? JSON.parse(product.tamanhos) : product.tamanhos;
+        } else {
+          product.sizes = ['P', 'M', 'G', 'GG', 'XGG']; // Padrão se não tiver
+        }
+      }
+      
+      return product;
     },
     enabled: !!productId,
   });
@@ -101,10 +122,19 @@ export default function ProductDetail() {
         throw new Error('Selecione a quantidade');
       }
       
+      // Garantir que o usuário está logado
+      const user = await base44.auth.me();
+      if (!user?.email) {
+        toast.error('Você precisa estar logado para adicionar ao carrinho');
+        throw new Error('Usuário não autenticado');
+      }
+      
       // Save product ID to sessionStorage for back navigation
       sessionStorage.setItem('lastViewedProduct', productId);
       
+      // Filtrar por usuário logado + produto + tamanho
       const existingItems = await base44.entities.CartItem.filter({
+        created_by: user.email,
         product_id: productId,
         size: selectedSize,
       });
@@ -187,26 +217,80 @@ export default function ProductDetail() {
       {/* Product Layout - Side by Side */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
-          {/* Left - Product Image */}
-          <div className="relative bg-gradient-to-b from-[#1a1a1a] to-[#0A0A0A] rounded-xl md:rounded-2xl flex items-center justify-center p-6 md:p-8 border border-[#2a2a2a] aspect-square">
-            <div className="absolute inset-0 bg-[#00FF85]/5 rounded-xl md:rounded-2xl" />
-            <motion.img
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              src={product.image_url}
-              alt={product.name}
-              loading="eager"
-              className="max-w-[80%] md:max-w-full max-h-[80%] md:max-h-full object-contain relative z-10"
-            />
-            {product.is_new && (
-              <span className="absolute top-4 left-4 px-3 py-1 bg-[#00FF85] text-black text-xs font-bold rounded-full">
-                NOVO
-              </span>
-            )}
-            {hasDiscount && (
-              <span className="absolute top-4 right-4 px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                -{Math.round((1 - product.price / product.original_price) * 100)}%
-              </span>
+          {/* Left - Product Images with Carousel */}
+          <div className="relative">
+            {/* Main Image */}
+            <div className="relative bg-gradient-to-b from-[#1a1a1a] to-[#0A0A0A] rounded-xl md:rounded-2xl flex items-center justify-center p-6 md:p-8 border border-[#2a2a2a] aspect-square mb-4">
+              <div className="absolute inset-0 bg-[#00FF85]/5 rounded-xl md:rounded-2xl" />
+              <motion.img
+                key={currentImageIndex}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                src={product.productImages[currentImageIndex] || product.image_url}
+                alt={product.name}
+                loading="eager"
+                className="max-w-[80%] md:max-w-full max-h-[80%] md:max-h-full object-contain relative z-10"
+              />
+              {product.is_new && (
+                <span className="absolute top-4 left-4 px-3 py-1 bg-[#00FF85] text-black text-xs font-bold rounded-full z-20">
+                  NOVO
+                </span>
+              )}
+              {hasDiscount && (
+                <span className="absolute top-4 right-4 px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full z-20">
+                  -{Math.round((1 - product.price / product.original_price) * 100)}%
+                </span>
+              )}
+              
+              {/* Navigation Arrows - Only show if multiple images */}
+              {product.productImages.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setCurrentImageIndex((prev) => prev === 0 ? product.productImages.length - 1 : prev - 1)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#141414]/80 border border-[#2a2a2a] flex items-center justify-center hover:border-[#00FF85]/50 hover:bg-[#1a1a1a] transition-all z-20"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentImageIndex((prev) => prev === product.productImages.length - 1 ? 0 : prev + 1)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#141414]/80 border border-[#2a2a2a] flex items-center justify-center hover:border-[#00FF85]/50 hover:bg-[#1a1a1a] transition-all z-20"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+              
+              {/* Image Counter */}
+              {product.productImages.length > 1 && (
+                <div className="absolute bottom-4 right-4 px-3 py-1 bg-[#141414]/80 border border-[#2a2a2a] rounded-full text-xs z-20">
+                  {currentImageIndex + 1} / {product.productImages.length}
+                </div>
+              )}
+            </div>
+            
+            {/* Thumbnails */}
+            {product.productImages.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {product.productImages.map((image, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setCurrentImageIndex(index)}
+                    className={cn(
+                      "flex-shrink-0 w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden border-2 transition-all",
+                      currentImageIndex === index 
+                        ? "border-[#00FF85] scale-105" 
+                        : "border-[#2a2a2a] hover:border-[#666] opacity-60 hover:opacity-100"
+                    )}
+                  >
+                    <img
+                      src={image}
+                      alt={`${product.name} - ${index + 1}`}
+                      className="w-full h-full object-contain bg-[#1a1a1a]"
+                    />
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 

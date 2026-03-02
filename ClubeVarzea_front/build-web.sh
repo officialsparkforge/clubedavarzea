@@ -2,7 +2,7 @@
 
 echo -e "\nIniciando criação da imagem de produção"
 
-export VITE_API_URL="https://monopus-erp.sparkforge.com.br"
+export VITE_API_URL="https://clubedavarzea.com.br"
 export VITE_NODE_ENV="prod"
 export FRONTEND_PORT="5151"
 

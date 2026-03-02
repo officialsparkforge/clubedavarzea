@@ -12,6 +12,16 @@ export default function ProductCard({ product, isFavorite, onToggleFavorite }) {
   const discountPercent = hasDiscount 
     ? Math.round((1 - product.price / product.original_price) * 100) 
     : 0;
+  
+  // Suportar tanto images (nova estrutura) quanto image_url (antiga)
+  const getProductImage = () => {
+    if (product.image_url) return product.image_url;
+    if (product.images) {
+      const images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
+      return images[0] || '';
+    }
+    return '';
+  };
 
   const { data: reviews = [] } = useQuery({
     queryKey: ['reviews', product.id],
@@ -59,7 +69,7 @@ export default function ProductCard({ product, isFavorite, onToggleFavorite }) {
       <Link to={createPageUrl(`ProductDetail?id=${product.id}`) + (sessionStorage.getItem('referralCode') ? `&ref=${sessionStorage.getItem('referralCode')}` : '')}>
         <div className="aspect-square p-3 md:p-4 flex items-center justify-center bg-gradient-to-b from-[#1a1a1a] to-[#141414]">
           <img
-            src={product.image_url}
+            src={getProductImage()}
             alt={product.name}
             loading="lazy"
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"

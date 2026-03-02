@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { produtosAPI, timesAPI } from '@/lib/api';
-import { ArrowLeft, Upload, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, X, Loader2, GripVertical, ImagePlus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +38,7 @@ export default function AdminProductForm() {
     price: '',
     original_price: '',
     image_url: '',
+    images: [],
     sizes: ['P', 'M', 'G', 'GG'],
     description: '',
     composition: 'Poliéster',
@@ -59,6 +60,14 @@ export default function AdminProductForm() {
           const products = await produtosAPI.listar();
           const product = products.find(p => p.id === productId);
           if (product) {
+            // Migrar image_url para images array se necessário
+            let images = [];
+            if (product.images) {
+              images = typeof product.images === 'string' ? JSON.parse(product.images) : product.images;
+            } else if (product.image_url) {
+              images = [product.image_url];
+            }
+            
             setFormData({
               id: product.id,
               name: product.nome,
@@ -68,7 +77,8 @@ export default function AdminProductForm() {
               version: product.versao,
               price: product.preco,
               original_price: product.preco_original,
-              image_url: product.image_url,
+              image_url: product.image_url || '',
+              images: images,
               sizes: JSON.parse(product.tamanhos || '[]'),
               description: product.descricao,
               composition: product.composicao,
@@ -86,23 +96,60 @@ export default function AdminProductForm() {
   }, [isEdit, productId]);
 
   const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setUploading(true);
     try {
-      // Simulando upload de imagem
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFormData({ ...formData, image_url: e.target?.result });
-        toast.success('Imagem carregada com sucesso!');
-      };
-      reader.readAsDataURL(file);
+      const newImages = [];
+      
+      for (const file of files) {
+        const reader = new FileReader();
+        const result = await new Promise((resolve, reject) => {
+          reader.onload = (e) => resolve(e.target?.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        newImages.push(result);
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newImages],
+        image_url: prev.images.length === 0 && newImages.length > 0 ? newImages[0] : prev.image_url
+      }));
+      
+      toast.success(`${newImages.length} imagem(ns) carregada(s) com sucesso!`);
     } catch (error) {
-      toast.error('Erro ao fazer upload da imagem');
+      toast.error('Erro ao fazer upload das imagens');
     } finally {
       setUploading(false);
     }
+  };
+  
+  const handleRemoveImage = (index) => {
+    setFormData(prev => {
+      const newImages = prev.images.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        images: newImages,
+        image_url: newImages.length > 0 ? newImages[0] : ''
+      };
+    });
+    toast.success('Imagem removida');
+  };
+  
+  const handleMoveImage = (fromIndex, toIndex) => {
+    setFormData(prev => {
+      const newImages = [...prev.images];
+      const [movedImage] = newImages.splice(fromIndex, 1);
+      newImages.splice(toIndex, 0, movedImage);
+      return {
+        ...prev,
+        images: newImages,
+        image_url: newImages.length > 0 ? newImages[0] : ''
+      };
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -131,7 +178,8 @@ export default function AdminProductForm() {
         versao: formData.version,
         preco: parseFloat(formData.price),
         preco_original: formData.original_price ? parseFloat(formData.original_price) : null,
-        image_url: formData.image_url,
+        image_url: formData.images.length > 0 ? formData.images[0] : formData.image_url,
+        images: JSON.stringify(formData.images),
         tamanhos: JSON.stringify(formData.sizes),
         descricao: formData.description,
         composicao: formData.composition,
@@ -179,45 +227,94 @@ export default function AdminProductForm() {
 
       <div className="max-w-4xl mx-auto px-6 py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Image Upload */}
+          {/* Multiple Images Upload */}
           <div className="bg-[#141414] rounded-lg border border-[#2a2a2a] p-6">
-            <Label className="text-white mb-2 block">Imagem do Produto</Label>
-            {formData.image_url ? (
-              <div className="relative aspect-square w-64 mx-auto bg-[#1a1a1a] rounded-lg overflow-hidden">
-                <img src={formData.image_url} alt="Preview" className="w-full h-full object-contain" />
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, image_url: '' })}
-                  className="absolute top-2 right-2 p-2 bg-red-500 rounded-full hover:bg-red-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="image-upload"
-                  disabled={uploading}
-                />
-                <label
-                  htmlFor="image-upload"
-                  className="flex flex-col items-center justify-center w-full aspect-square max-w-sm mx-auto border-2 border-dashed border-[#2a2a2a] rounded-lg cursor-pointer hover:border-[#00FF85]/50 transition-colors"
-                >
-                  {uploading ? (
-                    <Loader2 className="w-12 h-12 text-[#00FF85] animate-spin" />
-                  ) : (
-                    <>
-                      <Upload className="w-12 h-12 text-[#666] mb-2" />
-                      <p className="text-[#888]">Clique para fazer upload</p>
-                    </>
-                  )}
-                </label>
+            <div className="flex items-center justify-between mb-4">
+              <Label className="text-white">Imagens do Produto</Label>
+              <span className="text-xs text-[#888]">{formData.images.length} imagem(ns)</span>
+            </div>
+            
+            {/* Grid de imagens */}
+            {formData.images.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
+                {formData.images.map((image, index) => (
+                  <div 
+                    key={index} 
+                    className="relative aspect-square bg-[#1a1a1a] rounded-lg overflow-hidden group border-2 border-transparent hover:border-[#00FF85] transition-colors"
+                  >
+                    {index === 0 && (
+                      <span className="absolute top-2 left-2 z-10 px-2 py-1 bg-[#00FF85] text-black text-xs font-bold rounded">
+                        PRINCIPAL
+                      </span>
+                    )}
+                    <img 
+                      src={image} 
+                      alt={`Preview ${index + 1}`} 
+                      className="w-full h-full object-contain" 
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                      <div className="flex gap-2">
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImage(index, index - 1)}
+                            className="p-2 bg-[#00FF85] text-black rounded hover:bg-[#00FF85]/80"
+                            title="Mover para esquerda"
+                          >
+                            ←
+                          </button>
+                        )}
+                        {index < formData.images.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImage(index, index + 1)}
+                            className="p-2 bg-[#00FF85] text-black rounded hover:bg-[#00FF85]/80"
+                            title="Mover para direita"
+                          >
+                            →
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(index)}
+                        className="p-2 bg-red-500 rounded hover:bg-red-600"
+                        title="Remover imagem"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+            
+            {/* Upload button */}
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+                id="image-upload"
+                disabled={uploading}
+              />
+              <label
+                htmlFor="image-upload"
+                className="flex flex-col items-center justify-center w-full p-8 border-2 border-dashed border-[#2a2a2a] rounded-lg cursor-pointer hover:border-[#00FF85]/50 transition-colors"
+              >
+                {uploading ? (
+                  <Loader2 className="w-8 h-8 text-[#00FF85] animate-spin" />
+                ) : (
+                  <>
+                    <ImagePlus className="w-8 h-8 text-[#666] mb-2" />
+                    <p className="text-[#888] text-sm">Clique para adicionar imagens</p>
+                    <p className="text-[#666] text-xs mt-1">Você pode selecionar múltiplas imagens</p>
+                  </>
+                )}
+              </label>
+            </div>
           </div>
 
           {/* Basic Info */}
