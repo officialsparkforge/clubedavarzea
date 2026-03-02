@@ -1122,8 +1122,8 @@ app.get('/api/coupons', async (req, res) => {
 
 app.get('/api/cart-items', async (req, res) => {
   try {
-    const { product_id, size } = req.query;
-    const createdBy = getUserIdentifier(req);
+    const { product_id, size, created_by } = req.query;
+    const createdBy = created_by || getUserIdentifier(req);
     const connection = await pool.getConnection();
     const columnMap = await getCartColumnMap(connection);
     const filters = [];
@@ -1757,7 +1757,11 @@ app.post('/api/orders', async (req, res) => {
       estimated_delivery,
     } = req.body;
 
-    if (!order_number || !total) {
+    const normalizedOrderNumber = order_number || req.body.numero_pedido || null;
+    const normalizedTotal = total ?? req.body.valor_total;
+    const totalNumber = Number(normalizedTotal);
+
+    if (!normalizedOrderNumber || normalizedTotal === undefined || normalizedTotal === null || Number.isNaN(totalNumber)) {
       return res.status(400).json({ error: 'Numero do pedido e total sao obrigatorios' });
     }
 
@@ -1787,7 +1791,7 @@ app.post('/api/orders', async (req, res) => {
             transactions.push({
               amount: walletDiscountNum,
               type: 'debit',
-              description: `Compra - Pedido ${order_number}`,
+              description: `Compra - Pedido ${normalizedOrderNumber}`,
               order_id: id,
               date: new Date().toISOString(),
             });
@@ -1813,7 +1817,7 @@ app.post('/api/orders', async (req, res) => {
         [
           id,
           createdBy,
-          order_number,
+          normalizedOrderNumber,
           status || 'confirmado',
           JSON.stringify(items || []),
           subtotal || 0,
@@ -1821,7 +1825,7 @@ app.post('/api/orders', async (req, res) => {
           discount || 0,
           wallet_discount || 0,
           wallet_id || null,
-          total,
+          totalNumber,
           coupon_code || null,
           customer_name || null,
           customer_email || null,

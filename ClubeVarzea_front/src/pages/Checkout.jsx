@@ -194,6 +194,16 @@ export default function Checkout() {
 
   const createOrderMutation = useMutation({
     mutationFn: async () => {
+      if (!cartItems || cartItems.length === 0) {
+        toast.error('Seu carrinho está vazio. Adicione produtos antes de confirmar o pedido.');
+        throw new Error('Carrinho vazio');
+      }
+
+      if (!Number.isFinite(total) || total <= 0) {
+        toast.error('Não foi possível calcular o total do pedido.');
+        throw new Error('Total inválido');
+      }
+
       const orderNumber = `CDV${Date.now().toString(36).toUpperCase()}`;
       const estimatedDays = parseInt(selectedShipping?.days) || 10;
       const estimatedDelivery = new Date();
