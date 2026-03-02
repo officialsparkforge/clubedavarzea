@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Input } from "@/components/ui/input";
 import { base44 } from '@/api/base44Client';
+import { getOrCreateAnonymousId } from '@/lib/utils';
 
 const validCoupons = {
   'VARZEA10': 10,
@@ -23,9 +24,17 @@ export default function Cart() {
   const { data: cartItems = [], isLoading } = useQuery({
     queryKey: ['cart'],
     queryFn: async () => {
-      const user = await base44.auth.me();
-      if (!user?.email) return [];
-      return base44.entities.CartItem.filter({ created_by: user.email });
+      try {
+        const user = await base44.auth.me();
+        if (!user?.email) {
+          // Usuário não logado - usar ID anônimo
+          return base44.entities.CartItem.filter({ created_by: getOrCreateAnonymousId() });
+        }
+        return base44.entities.CartItem.filter({ created_by: user.email });
+      } catch {
+        // Se falhar em obter user, usar ID anônimo
+        return base44.entities.CartItem.filter({ created_by: getOrCreateAnonymousId() });
+      }
     },
   });
 

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
+import { getOrCreateAnonymousId } from '@/lib/utils';
 import BottomNav from '@/components/ui/BottomNav';
 import { LogOut, Settings, Package, LayoutGrid } from 'lucide-react';
 
@@ -16,10 +17,14 @@ export default function Layout({ children, currentPageName }) {
     queryFn: async () => {
       try {
         const currentUser = await base44.auth.me();
-        if (!currentUser?.email) return [];
+        if (!currentUser?.email) {
+          // Usuário não logado - usar ID anônimo
+          return base44.entities.CartItem.filter({ created_by: getOrCreateAnonymousId() });
+        }
         return base44.entities.CartItem.filter({ created_by: currentUser.email });
       } catch {
-        return [];
+        // Se falhar em obter user, usar ID anônimo
+        return base44.entities.CartItem.filter({ created_by: getOrCreateAnonymousId() });
       }
     },
   });

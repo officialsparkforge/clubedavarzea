@@ -35,6 +35,14 @@ const parseJson = (value, fallback) => {
 };
 
 const getUserEmail = (req) => req.get('X-User-Email') || null;
+const getAnonymousId = (req) => req.get('X-Anonymous-Id') || null;
+
+// Obter identificador do usuário (email se logado, ID anônimo caso contrário)
+const getUserIdentifier = (req) => {
+  const userEmail = getUserEmail(req);
+  if (userEmail) return userEmail;
+  return getAnonymousId(req) || null;
+};
 
 // Pool de conexoes MySQL
 const pool = mysql.createPool({
@@ -1038,7 +1046,7 @@ app.get('/api/coupons', async (req, res) => {
 app.get('/api/cart-items', async (req, res) => {
   try {
     const { product_id, size } = req.query;
-    const createdBy = getUserEmail(req);
+    const createdBy = getUserIdentifier(req);
     const connection = await pool.getConnection();
     const filters = [];
     const params = [];
@@ -1072,7 +1080,7 @@ app.get('/api/cart-items', async (req, res) => {
 
 app.post('/api/cart-items', async (req, res) => {
   try {
-    const createdBy = req.body.created_by || getUserEmail(req);
+    const createdBy = req.body.created_by || getUserIdentifier(req);
     const { product_id, name, team, size, quantity, price, image_url } = req.body;
 
     if (!createdBy || !product_id || !name || !price) {
@@ -1126,7 +1134,7 @@ app.delete('/api/cart-items/:id', async (req, res) => {
 app.get('/api/favorites', async (req, res) => {
   try {
     const { product_id } = req.query;
-    const createdBy = getUserEmail(req);
+    const createdBy = getUserIdentifier(req);
     const connection = await pool.getConnection();
     const filters = [];
     const params = [];
@@ -1155,7 +1163,7 @@ app.get('/api/favorites', async (req, res) => {
 
 app.post('/api/favorites', async (req, res) => {
   try {
-    const createdBy = req.body.created_by || getUserEmail(req);
+    const createdBy = req.body.created_by || getUserIdentifier(req);
     const { product_id } = req.body;
 
     if (!createdBy || !product_id) {

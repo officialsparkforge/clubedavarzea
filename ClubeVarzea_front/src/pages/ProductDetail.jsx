@@ -122,28 +122,36 @@ export default function ProductDetail() {
         throw new Error('Selecione a quantidade');
       }
       
-      // Garantir que o usuário está logado
-      const user = await base44.auth.me();
-      if (!user?.email) {
-        toast.error('Você precisa estar logado para adicionar ao carrinho');
-        throw new Error('Usuário não autenticado');
+      // Obter usuário se estiver logado, senão usar ID anônimo
+      let userEmail;
+      try {
+        const user = await base44.auth.me();
+        userEmail = user?.email;
+      } catch {
+        // Usuário não logado - gerar ID anônimo
+        userEmail = null;
       }
       
       // Save product ID to sessionStorage for back navigation
       sessionStorage.setItem('lastViewedProduct', productId);
       
-      // Filtrar por usuário logado + produto + tamanho
-      const existingItems = await base44.entities.CartItem.filter({
-        created_by: user.email,
-        product_id: productId,
-        size: selectedSize,
-      });
+      // Se logado, filtrar por usuário + produto + tamanho
+      let existingItems = [];
+      if (userEmail) {
+        existingItems = await base44.entities.CartItem.filter({
+          created_by: userEmail,
+          product_id: productId,
+          size: selectedSize,
+        });
+      }
       
       if (existingItems.length > 0) {
+        // Atualizar quantidade se item já existe
         await base44.entities.CartItem.update(existingItems[0].id, {
           quantity: existingItems[0].quantity + quantity,
         });
       } else {
+        // Criar novo item (com ou sem usuário)
         await base44.entities.CartItem.create({
           product_id: productId,
           name: product.name,
@@ -152,6 +160,7 @@ export default function ProductDetail() {
           quantity: quantity,
           price: product.price,
           image_url: product.image_url,
+          // Se não estiver logado, deixa o backend gerar um guest ID
         });
       }
     },

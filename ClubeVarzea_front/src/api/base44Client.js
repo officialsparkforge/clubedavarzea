@@ -9,6 +9,16 @@ const getStoredUser = () => {
   }
 };
 
+const getOrCreateAnonymousId = () => {
+  const key = 'clubevarzea_anon_id';
+  let anonId = localStorage.getItem(key);
+  if (!anonId) {
+    anonId = 'anon_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem(key, anonId);
+  }
+  return anonId;
+};
+
 const request = async (path, options = {}) => {
   const user = getStoredUser();
   const headers = {
@@ -18,6 +28,9 @@ const request = async (path, options = {}) => {
 
   if (user?.email) {
     headers['X-User-Email'] = user.email;
+  } else {
+    // Se não estiver logado, passar ID anônimo
+    headers['X-Anonymous-Id'] = getOrCreateAnonymousId();
   }
 
   const response = await fetch(`${API_URL}${path}`, {

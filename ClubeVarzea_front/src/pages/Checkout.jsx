@@ -34,6 +34,7 @@ export default function Checkout() {
   const queryClient = useQueryClient();
   const [loadingCep, setLoadingCep] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -50,6 +51,45 @@ export default function Checkout() {
   });
   const [shippingMethod, setShippingMethod] = useState('padrao');
   const [paymentMethod, setPaymentMethod] = useState('pix');
+
+  useEffect(() => {
+    let active = true;
+
+    const requireLoginAndPrefill = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        if (!active) return;
+
+        setFormData((prev) => ({
+          ...prev,
+          name: currentUser?.full_name || currentUser?.name || prev.name,
+          email: currentUser?.email || prev.email,
+          phone: currentUser?.phone || prev.phone,
+          street: currentUser?.address?.street || prev.street,
+          number: currentUser?.address?.number || prev.number,
+          complement: currentUser?.address?.complement || prev.complement,
+          neighborhood: currentUser?.address?.neighborhood || prev.neighborhood,
+          city: currentUser?.address?.city || prev.city,
+          state: currentUser?.address?.state || prev.state,
+          zip_code: currentUser?.address?.zip_code || prev.zip_code,
+        }));
+      } catch {
+        if (!active) return;
+        const returnTo = `${window.location.pathname}${window.location.search}`;
+        toast.error('Faça login para continuar o pagamento');
+        navigate(createPageUrl(`Login?redirect=${encodeURIComponent(returnTo)}`));
+        return;
+      } finally {
+        if (active) setCheckingAuth(false);
+      }
+    };
+
+    requireLoginAndPrefill();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
 
   const { data: cartItems = [] } = useQuery({
     queryKey: ['cart'],
@@ -361,6 +401,14 @@ Clube da Várzea
     { number: 2, title: 'Endereço' },
     { number: 3, title: 'Pagamento' },
   ];
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-[#00FF85] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-32">

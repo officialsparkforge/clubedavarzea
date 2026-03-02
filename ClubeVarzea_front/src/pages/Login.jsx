@@ -10,6 +10,9 @@ import { motion } from 'framer-motion';
 export default function Login() {
   const navigate = useNavigate();
   const { login, register, resetPassword, isLoadingAuth, authError } = useAuth();
+  const urlParams = new URLSearchParams(window.location.search);
+  const redirectParam = urlParams.get('redirect');
+  const redirectTo = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/';
   const [mode, setMode] = useState('login'); // 'login' ou 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +31,7 @@ export default function Login() {
 
     try {
       await login(email, password);
-      navigate('/');
+      navigate(redirectTo);
     } catch (error) {
       setLocalError(error.message);
     }
@@ -41,7 +44,7 @@ export default function Login() {
 
     try {
       await register(name, email, password);
-      navigate('/');
+      navigate(redirectTo);
     } catch (error) {
       setLocalError(error.message);
     }
