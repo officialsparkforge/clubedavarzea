@@ -165,30 +165,151 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
-// Verificar e adicionar coluna preco_custo se não existir
+// Verificar e criar estruturas do banco de dados ao iniciar
 (async () => {
   try {
     const connection = await pool.getConnection();
+    const dbName = process.env.DB_NAME || 'clube_varzea';
     
-    // Verificar se a coluna preco_custo existe
-    const [columns] = await connection.query(
+    console.log('🔍 Verificando estrutura do banco de dados...');
+    
+    // 1. Verificar e adicionar coluna preco_custo à tabela produtos
+    const [colunaPrecoCusto] = await connection.query(
       "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos' AND COLUMN_NAME = 'preco_custo'",
-      [process.env.DB_NAME || 'clube_varzea']
+      [dbName]
     );
     
-    if (columns.length === 0) {
+    if (colunaPrecoCusto.length === 0) {
       console.log('⚙️ Adicionando coluna preco_custo à tabela produtos...');
       await connection.query(
         'ALTER TABLE produtos ADD COLUMN preco_custo DECIMAL(10,2) DEFAULT 0 AFTER preco_original'
       );
-      console.log('✅ Coluna preco_custo adicionada com sucesso');
-    } else {
-      console.log('✅ Coluna preco_custo já existe');
+      console.log('✅ Coluna preco_custo adicionada');
     }
     
+    // 2. Verificar e criar tabela produtos_custos_historico
+    const [tabelaCustosHistorico] = await connection.query(
+      "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos_custos_historico'",
+      [dbName]
+    );
+    
+    if (tabelaCustosHistorico.length === 0) {
+      console.log('⚙️ Criando tabela produtos_custos_historico...');
+      await connection.query(`
+        CREATE TABLE produtos_custos_historico (
+          id VARCHAR(36) PRIMARY KEY,
+          produto_id VARCHAR(36) NOT NULL,
+          data DATE NOT NULL,
+          custo DECIMAL(10,2) NOT NULL,
+          venda DECIMAL(10,2),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE,
+          INDEX idx_produto_data (produto_id, data DESC)
+        )
+      `);
+      console.log('✅ Tabela produtos_custos_historico criada');
+    }
+    
+    // 3. Verificar e adicionar coluna customer_document à tabela orders
+    const [colunaCustomerDocument] = await connection.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'orders' AND COLUMN_NAME = 'customer_document'",
+      [dbName]
+    );
+    
+    if (colunaCustomerDocument.length === 0) {
+      console.log('⚙️ Adicionando coluna customer_document à tabela orders...');
+      await connection.query(
+        'ALTER TABLE orders ADD COLUMN customer_document VARCHAR(20) AFTER customer_phone'
+      );
+      console.log('✅ Coluna customer_document adicionada');
+    }
+    
+    // 4. Verificar e adicionar colunas do Asaas à tabela orders
+    const colunasAsaas = [
+      { nome: 'asaas_customer_id', tipo: 'VARCHAR(50)' },
+      { nome: 'asaas_payment_id', tipo: 'VARCHAR(50)' },
+      { nome: 'asaas_invoice_url', tipo: 'TEXT' },
+      { nome: 'asaas_bank_slip_url', tipo: 'TEXT' },
+      { nome: 'asaas_bank_slip_barcode', tipo: 'TEXT' },
+      { nome: 'asaas_payment_due_date', tipo: 'DATE' },
+      { nome: 'pix_qr_code', tipo: 'TEXT' },
+      { nome: 'pix_qr_code_image', tipo: 'TEXT' },
+    ];
+    
+    for (const coluna of colunasAsaas) {
+      const [existe] = await connection.query(
+        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'orders' AND COLUMN_NAME = ?",
+        [dbName, coluna.nome]
+      );
+      
+      if (existe.length === 0) {
+        console.log(`⚙️ Adicionando coluna ${coluna.nome} à tabela orders...`);
+        await connection.query(
+          `ALTER TABLE orders ADD COLUMN ${coluna.nome} ${coluna.tipo}`
+        );
+        console.log(`✅ Coluna ${coluna.nome} adicionada`);
+      }
+    }
+    
+    // 5. Verificar se tabela referrals existe
+    const [tabelaReferrals] = await connection.query(
+      "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'referrals'",
+      [dbName]
+    );
+    
+    if (tabelaReferrals.length === 0) {
+      console.log('⚙️ Criando tabela referrals...');
+      await connection.query(`
+        CREATE TABLE referrals (
+          id VARCHAR(36) PRIMARY KEY,
+          created_by VARCHAR(255) NOT NULL,
+          referral_code VARCHAR(50) UNIQUE NOT NULL,
+          level INT DEFAULT 1,
+          referred_orders JSON,
+          total_commission DECIMAL(10,2) DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_referral_code (referral_code),
+          INDEX idx_created_by (created_by)
+        )
+      `);
+      console.log('✅ Tabela referrals criada');
+    }
+    
+    // 6. Verificar se tabela cupons existe
+    const [tabelaCupons] = await connection.query(
+      "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'cupons'",
+      [dbName]
+    );
+    
+    if (tabelaCupons.length === 0) {
+      console.log('⚙️ Criando tabela cupons...');
+      await connection.query(`
+        CREATE TABLE cupons (
+          id VARCHAR(36) PRIMARY KEY,
+          codigo VARCHAR(50) UNIQUE NOT NULL,
+          desconto_percentual DECIMAL(5,2),
+          desconto_fixo DECIMAL(10,2),
+          compra_minima DECIMAL(10,2) DEFAULT 0,
+          max_usos INT DEFAULT -1,
+          usos_atuais INT DEFAULT 0,
+          valido_de DATE,
+          valido_ate DATE,
+          ativo TINYINT(1) DEFAULT 1,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_codigo (codigo),
+          INDEX idx_ativo (ativo)
+        )
+      `);
+      console.log('✅ Tabela cupons criada');
+    }
+    
+    console.log('✅ Verificação do banco de dados concluída com sucesso!');
     connection.release();
   } catch (error) {
-    console.error('❌ Erro ao verificar/adicionar coluna preco_custo:', error.message);
+    console.error('❌ Erro ao verificar/criar estruturas do banco:', error.message);
   }
 })();
 
