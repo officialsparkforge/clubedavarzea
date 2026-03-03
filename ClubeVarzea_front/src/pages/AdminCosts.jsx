@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { ArrowLeft, Search, TrendingUp, Package, DollarSign, BarChart3, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Search, TrendingUp, Package, DollarSign, BarChart3, ChevronDown, Edit2, Save, X, Users } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { toast } from 'sonner';
 import NeonButton from '@/components/ui/NeonButton';
 
@@ -29,13 +29,19 @@ const formatCurrency = (value) => {
 
 const formatPercent = (value) => `${(value || 0).toFixed(1)}%`;
 
+const COLORS = ['#00FF85', '#00C9FF', '#FFD700', '#FF6B6B', '#845EC2', '#FF9671'];
+
 export default function AdminCosts() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState(null);
   const [filterTime, setFilterTime] = useState('');
-  const [sortBy, setSortBy] = useState('lucro'); // nome, custo, venda, margem, lucro, quantidade
+  const [sortBy, setSortBy] = useState('lucro');
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [editCost, setEditCost] = useState('');
+  const [viewMode, setViewMode] = useState('produtos'); // produtos, referencias
 
   if (!isAdmin()) {
     return (
@@ -53,6 +59,44 @@ export default function AdminCosts() {
       return response.json();
     },
   });
+
+  const { data: lucrosData } = useQuery({
+    queryKey: ['relatorio-lucros'],
+    queryFn: async () => {
+      const response = await fetch(`${API_URL}/relatorio/lucros`);
+      if (!response.ok) return null;
+      return response.json();
+    },
+  });
+
+  const updateCostMutation = useMutation({
+    mutationFn: async ({ productId, newCost }) => {
+      const response = await fetch(`${API_URL}/produtos/${productId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preco_custo: parseFloat(newCost) }),
+      });
+      if (!response.ok) throw new Error('Erro ao atualizar custo');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast.success('Custo atualizado com sucesso!');
+      queryClient.invalidateQueries(['admin-custos']);
+      setEditingProduct(null);
+      setEditCost('');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erro ao atualizar custo');
+    },
+  });
+
+  const handleSaveCost = (productId) => {
+    if (!editCost || isNaN(parseFloat(editCost))) {
+      toast.error('Digite um valor válido');
+      return;
+    }
+    updateCostMutation.mutate({ productId, newCost: editCost });
+  };
 
   const filteredProducts = useMemo(() => {
     if (!data?.produtos) return [];
@@ -90,6 +134,40 @@ export default function AdminCosts() {
     if (!data?.produtos) return [];
     return [...new Set(data.produtos.map(p => p.time).filter(Boolean))];
   }, [data?.produtos]);
+
+  // Análise por código de referência
+  const referralAnalysis = useMemo(() => {
+    if (!lucrosData?.vendas) return [];
+    
+    const refMap = {};
+    lucrosData.vendas.forEach(venda => {
+      const code = venda.referral_code || 'SEM_CODIGO';
+      if (!refMap[code]) {
+        refMap[code] = {
+          code,
+          vendas: 0,
+          receita: 0,
+          custo: 0,
+          lucro: 0,
+          comissao: 0,
+          referrer: venda.referrer,
+        };
+      }
+      refMap[code].vendas += 1;
+      refMap[code].receita += venda.venda_total;
+      refMap[code].custo += venda.custo_total;
+      refMap[code].lucro += venda.lucro;
+      refMap[code].comissao += venda.comissao || 0;
+    });
+    
+    return Object.values(refMap)
+      .map(r => ({
+        ...r,
+        lucro_liquido: r.lucro - r.comissao,
+        margem: r.receita > 0 ? ((r.lucro - r.comissao) / r.receita) * 100 : 0,
+      }))
+      .sort((a, b) => b.lucro_liquido - a.lucro_liquido);
+  }, [lucrosData]);
 
   const resumo = data?.resumo || {
     total_produtos: 0,
@@ -178,27 +256,110 @@ export default function AdminCosts() {
           </div>
         </div>
 
-        {/* Gráfico de Margens */}
-        {chartData.length > 0 && (
-          <div className="bg-[#141414] rounded-2xl p-6 border border-[#2a2a2a] mb-8">
-            <h3 className="text-lg font-bold mb-4">Top 10 Produtos por Margem</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
-                <XAxis dataKey="name" stroke="#888" style={{ fontSize: '12px' }} />
-                <YAxis stroke="#888" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px' }}
-                  formatter={(value, name) => {
-                    if (name === 'margem') return [`${value}%`, 'Margem'];
-                    return [`R$ ${value.toFixed(2)}`, 'Lucro'];
-                  }}
-                />
-                <Bar dataKey="margem" fill="#00FF85" />
-              </BarChart>
-            </ResponsiveContainer>
+        {/* Tabs de Visualização */}
+        <div className="bg-[#141414] rounded-2xl p-2 border border-[#2a2a2a] mb-8 flex gap-2">
+          <button
+            onClick={() => setViewMode('produtos')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'produtos' 
+                ? 'bg-[#00FF85] text-black' 
+                : 'text-[#888] hover:text-white'
+            }`}
+          >
+            📦 Por Produtos
+          </button>
+          <button
+            onClick={() => setViewMode('referencias')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'referencias' 
+                ? 'bg-[#00FF85] text-black' 
+                : 'text-[#888] hover:text-white'
+            }`}
+          >
+            👥 Por Código de Referência
+          </button>
+        </div>
+
+        {/* Visualização: Por Código de Referência */}
+        {viewMode === 'referencias' && (
+          <div className="space-y-4">
+            <div className="bg-[#141414] rounded-2xl p-6 border border-[#2a2a2a]">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#00FF85]" />
+                Análise por Código de Referência
+              </h3>
+              
+              {referralAnalysis.length === 0 ? (
+                <p className="text-center text-[#888] py-8">Nenhum dado de referência disponível</p>
+              ) : (
+                <div className="space-y-3">
+                  {referralAnalysis.map((ref, idx) => (
+                    <div key={ref.code} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a]">
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-center">
+                        <div>
+                          <p className="text-xs text-[#888] mb-1">Código</p>
+                          <p className="font-bold text-[#00FF85]">{ref.code}</p>
+                          {ref.referrer && <p className="text-xs text-[#666]">{ref.referrer}</p>}
+                        </div>
+                        
+                        <div className="text-center">
+                          <p className="text-xs text-[#888]">Vendas</p>
+                          <p className="font-bold">{ref.vendas}</p>
+                        </div>
+                        
+                        <div className="text-center">
+                          <p className="text-xs text-[#888]">Receita</p>
+                          <p className="font-bold text-[#00FF85]">{formatCurrency(ref.receita)}</p>
+                        </div>
+                        
+                        <div className="text-center">
+                          <p className="text-xs text-[#888]">Custo</p>
+                          <p className="font-bold">{formatCurrency(ref.custo)}</p>
+                        </div>
+                        
+                        <div className="text-center">
+                          <p className="text-xs text-[#888]">Comissão</p>
+                          <p className="font-bold text-red-400">{formatCurrency(ref.comissao)}</p>
+                        </div>
+                        
+                        <div className="text-right">
+                          <p className="text-xs text-[#888]">Lucro Líquido</p>
+                          <p className="font-bold text-[#00FF85]">{formatCurrency(ref.lucro_liquido)}</p>
+                          <p className="text-xs text-[#888]">Margem: {formatPercent(ref.margem)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {/* Visualização: Por Produtos */}
+        {viewMode === 'produtos' && (
+          <>
+            {/* Gráfico de Margens */}
+            {chartData.length > 0 && (
+              <div className="bg-[#141414] rounded-2xl p-6 border border-[#2a2a2a] mb-8">
+                <h3 className="text-lg font-bold mb-4">Top 10 Produtos por Margem</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+                    <XAxis dataKey="name" stroke="#888" style={{ fontSize: '12px' }} />
+                    <YAxis stroke="#888" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px' }}
+                      formatter={(value, name) => {
+                        if (name === 'margem') return [`${value}%`, 'Margem'];
+                        return [`R$ ${value.toFixed(2)}`, 'Lucro'];
+                      }}
+                    />
+                    <Bar dataKey="margem" fill="#00FF85" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
         {/* Filtros e Busca */}
         <div className="bg-[#141414] rounded-2xl p-6 border border-[#2a2a2a] mb-8">
@@ -237,7 +398,7 @@ export default function AdminCosts() {
               <option value="lucro">Lucro Total</option>
             </select>
 
-            <div className="text-sm text-[#888]">
+            <div className="text-sm text-[#888] flex items-center">
               {filteredProducts.length} produtos encontrados
             </div>
           </div>
@@ -266,8 +427,51 @@ export default function AdminCosts() {
                     </div>
 
                     <div className="text-center">
-                      <p className="text-xs text-[#888]">Custo</p>
-                      <p className="font-bold text-sm">{formatCurrency(product.custo_unitario)}</p>
+                      <p className="text-xs text-[#888] mb-1">Custo</p>
+                      {editingProduct === product.id ? (
+                        <div className="flex items-center gap-1 justify-center">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={editCost}
+                            onChange={(e) => setEditCost(e.target.value)}
+                            className="w-20 h-7 text-xs bg-[#1a1a1a] border-[#00FF85]"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveCost(product.id)}
+                            className="p-1 bg-[#00FF85] text-black rounded hover:bg-[#00dd6d]"
+                            title="Salvar"
+                          >
+                            <Save className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingProduct(null);
+                              setEditCost('');
+                            }}
+                            className="p-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30"
+                            title="Cancelar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 justify-center">
+                          <p className="font-bold text-sm">{formatCurrency(product.custo_unitario)}</p>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingProduct(product.id);
+                              setEditCost(product.custo_unitario.toString());
+                            }}
+                            className="text-[#00FF85] hover:text-white"
+                            title="Editar custo"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-center">
@@ -347,6 +551,8 @@ export default function AdminCosts() {
             ))
           )}
         </div>
+          </>
+        )}
       </div>
     </div>
   );

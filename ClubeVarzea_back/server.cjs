@@ -380,6 +380,7 @@ app.put('/api/produtos/:id', async (req, res) => {
       versao,
       preco,
       preco_original,
+      preco_custo,
       tamanhos,
       descricao,
       composicao,
@@ -392,6 +393,7 @@ app.put('/api/produtos/:id', async (req, res) => {
     const resolvedVersion = versao || version || null;
     const resolvedPrice = price ?? preco;
     const resolvedOriginalPrice = original_price ?? preco_original ?? null;
+    const resolvedCostPrice = preco_custo ?? null;
     const resolvedSizes = sizes ?? tamanhos ?? [];
     const resolvedDescription = description || descricao || null;
     const resolvedComposition = composition || composicao || null;
@@ -426,7 +428,7 @@ app.put('/api/produtos/:id', async (req, res) => {
 
     await connection.query(
       `UPDATE produtos 
-       SET nome=?, time_id=?, categoria_id=?, season=?, versao=?, preco=?, preco_original=?, image_url=?, images=?, tamanhos=?, descricao=?, composicao=?, is_featured=?, is_new=?, estoque=?, updated_at=NOW()
+       SET nome=?, time_id=?, categoria_id=?, season=?, versao=?, preco=?, preco_original=?, preco_custo=?, image_url=?, images=?, tamanhos=?, descricao=?, composicao=?, is_featured=?, is_new=?, estoque=?, updated_at=NOW()
        WHERE id=?`,
       [
         nome,
@@ -436,6 +438,7 @@ app.put('/api/produtos/:id', async (req, res) => {
         resolvedVersion,
         resolvedPrice,
         resolvedOriginalPrice,
+        resolvedCostPrice,
         resolvedImageUrl || null,
         JSON.stringify(resolvedImages),
         JSON.stringify(resolvedSizes),
