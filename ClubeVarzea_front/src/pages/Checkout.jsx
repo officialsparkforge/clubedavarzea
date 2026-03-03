@@ -42,6 +42,7 @@ export default function Checkout() {
     name: '',
     email: '',
     phone: '',
+    document: '',
     street: '',
     number: '',
     complement: '',
@@ -159,7 +160,13 @@ export default function Checkout() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    let nextValue = value;
+
+    if (name === 'phone' || name === 'zip_code' || name === 'document') {
+      nextValue = value.replace(/\D/g, '');
+    }
+
+    setFormData({ ...formData, [name]: nextValue });
     
     // Auto-fetch CEP data
     if (name === 'zip_code' && value.replace(/\D/g, '').length === 8) {
@@ -229,6 +236,7 @@ export default function Checkout() {
         customer_name: formData.name,
         customer_email: formData.email,
         customer_phone: formData.phone,
+        customer_document: formData.document,
         shipping_address: {
           street: formData.street,
           number: formData.number,
@@ -405,6 +413,13 @@ Clube da Várzea
       toast.error('Digite um telefone válido com DDD');
       return false;
     }
+
+    const documentDigits = formData.document.replace(/\D/g, '');
+    if (documentDigits.length !== 11 && documentDigits.length !== 14) {
+      toast.error('Digite um CPF (11 dígitos) ou CNPJ (14 dígitos) válido');
+      return false;
+    }
+
     return true;
   };
 
@@ -548,6 +563,18 @@ Clube da Várzea
                   placeholder="(00) 00000-0000"
                 />
                 {attemptedSubmit && !formData.phone && <p className="text-red-500 text-xs mt-1">Campo obrigatório</p>}
+              </div>
+              <div>
+                <Label htmlFor="document" className="text-sm text-[#888]">CPF/CNPJ *</Label>
+                <Input
+                  id="document"
+                  name="document"
+                  value={formData.document}
+                  onChange={handleInputChange}
+                  className="bg-[#141414] border-[#2a2a2a] text-white focus:border-[#00FF85]/50 mt-1"
+                  placeholder="Somente números"
+                />
+                {attemptedSubmit && !formData.document && <p className="text-red-500 text-xs mt-1">Campo obrigatório</p>}
               </div>
             </div>
           </motion.div>

@@ -48,6 +48,7 @@ export default function Payment() {
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pixData, setPixData] = useState(null);
+  const [boletoData, setBoletoData] = useState(null);
   const [customerDocument, setCustomerDocument] = useState('');
   const [cardData, setCardData] = useState({
     number: '',
@@ -197,8 +198,14 @@ export default function Payment() {
 
       return payload;
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       toast.success('Boleto gerado com sucesso!');
+      // Armazenar dados do boleto para exibição
+      setBoletoData(data.payment);
+      // Abrir PDF do boleto automaticamente
+      if (data.payment?.bankSlipUrl) {
+        window.open(data.payment.bankSlipUrl, '_blank');
+      }
       await queryClient.invalidateQueries(['order', orderId]);
     },
     onError: (error) => {
@@ -216,8 +223,11 @@ export default function Payment() {
   };
 
   useEffect(() => {
+    const hasDocument = (customerDocument || order?.customer_document || '').replace(/\D/g, '').length >= 11;
+
     if (
       order?.payment_method === 'pix' &&
+      hasDocument &&
       !order?.asaas_payment_id &&
       !generatePixMutation.isPending &&
       !generatePixMutation.isSuccess &&
@@ -225,7 +235,7 @@ export default function Payment() {
     ) {
       generatePixMutation.mutate();
     }
-  }, [order, pixCode]);
+  }, [order, pixCode, customerDocument]);
 
   if (isLoading || !order) {
     return (
@@ -301,6 +311,9 @@ export default function Payment() {
             className="bg-[#1a1a1a] border-[#2a2a2a] text-white focus:border-[#00FF85]/50 mt-1"
             placeholder="Digite seu CPF ou CNPJ"
           />
+          {!customerDocument && (
+            <p className="text-xs text-amber-400 mt-2">Preencha o CPF/CNPJ para gerar cobrança no Asaas.</p>
+          )}
         </div>
 
         {/* PIX Payment */}
@@ -334,6 +347,18 @@ export default function Payment() {
               <p className="text-sm text-[#888] mb-4">
                 Escaneie o QR Code ou copie o código abaixo
               </p>
+
+              {!pixCode && !generatePixMutation.isPending && (
+                <div className="mb-4">
+                  <NeonButton
+                    onClick={() => generatePixMutation.mutate()}
+                    disabled={generatePixMutation.isPending}
+                    className="w-full"
+                  >
+                    {generatePixMutation.isPending ? 'Gerando PIX...' : 'Gerar QR Code PIX'}
+                  </NeonButton>
+                </div>
+              )}
 
               {/* PIX Code */}
               <div className="bg-[#1a1a1a] rounded-xl p-3 flex items-center gap-2">
@@ -457,12 +482,14 @@ export default function Payment() {
                 O boleto vence em 3 dias úteis. Após o pagamento, a confirmação pode levar até 2 dias úteis.
               </p>
 
-              <div className="bg-[#1a1a1a] rounded-xl p-4 mb-4">
-                <p className="text-xs text-[#888] mb-2">Código de barras</p>
-                <code className="text-sm break-all">
-                  23793.38128 60000.000003 00000.000400 1 92850000{(toNumber(order.total) * 100).toFixed(0)}
-                </code>
-              </div>
+              {boletoData && (
+                <div className="bg-[#1a1a1a] rounded-xl p-4 mb-4">
+                  <p className="text-xs text-[#888] mb-2">Código de barras</p>
+                  <code className="text-sm break-all font-mono">
+                    {boletoData.barCode || boletoData.identificationField || 'Aguardando geração...'}
+                  </code>
+                </div>
+              )}
 
               <NeonButton 
                 onClick={() => {

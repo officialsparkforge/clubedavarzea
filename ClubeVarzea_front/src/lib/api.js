@@ -4,13 +4,13 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export const produtosAPI = {
   async listar() {
-    const response = await fetch(`${API_URL}/produtos`);
+    const response = await fetch(`${API_URL}/api/produtos`);
     if (!response.ok) throw new Error('Erro ao listar produtos');
     return response.json();
   },
 
   async criar(data) {
-    const response = await fetch(`${API_URL}/produtos`, {
+    const response = await fetch(`${API_URL}/api/produtos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -20,7 +20,7 @@ export const produtosAPI = {
   },
 
   async atualizar(id, data) {
-    const response = await fetch(`${API_URL}/produtos/${id}`, {
+    const response = await fetch(`${API_URL}/api/produtos/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -30,7 +30,7 @@ export const produtosAPI = {
   },
 
   async deletar(id) {
-    const response = await fetch(`${API_URL}/produtos/${id}`, {
+    const response = await fetch(`${API_URL}/api/produtos/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Erro ao deletar produto');
@@ -42,13 +42,13 @@ export const produtosAPI = {
 
 export const cuponsAPI = {
   async listar() {
-    const response = await fetch(`${API_URL}/cupons`);
+    const response = await fetch(`${API_URL}/api/cupons`);
     if (!response.ok) throw new Error('Erro ao listar cupons');
     return response.json();
   },
 
   async criar(data) {
-    const response = await fetch(`${API_URL}/cupons`, {
+    const response = await fetch(`${API_URL}/api/cupons`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -58,7 +58,7 @@ export const cuponsAPI = {
   },
 
   async atualizar(id, data) {
-    const response = await fetch(`${API_URL}/cupons/${id}`, {
+    const response = await fetch(`${API_URL}/api/cupons/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -68,7 +68,7 @@ export const cuponsAPI = {
   },
 
   async deletar(id) {
-    const response = await fetch(`${API_URL}/cupons/${id}`, {
+    const response = await fetch(`${API_URL}/api/cupons/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Erro ao deletar cupom');
@@ -80,13 +80,13 @@ export const cuponsAPI = {
 
 export const timesAPI = {
   async listar() {
-    const response = await fetch(`${API_URL}/times`);
+    const response = await fetch(`${API_URL}/api/times`);
     if (!response.ok) throw new Error('Erro ao listar times');
     return response.json();
   },
 
   async criar(nome, categoria_id = null) {
-    const response = await fetch(`${API_URL}/times`, {
+    const response = await fetch(`${API_URL}/api/times`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nome, categoria_id }),
@@ -96,7 +96,7 @@ export const timesAPI = {
   },
 
   async deletar(nome) {
-    const response = await fetch(`${API_URL}/times/${encodeURIComponent(nome)}`, {
+    const response = await fetch(`${API_URL}/api/times/${encodeURIComponent(nome)}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Erro ao deletar time');
@@ -108,13 +108,13 @@ export const timesAPI = {
 
 export const categoriasAPI = {
   async listar() {
-    const response = await fetch(`${API_URL}/categorias`);
+    const response = await fetch(`${API_URL}/api/categorias`);
     if (!response.ok) throw new Error('Erro ao listar categorias');
     return response.json();
   },
 
   async criar(id, label) {
-    const response = await fetch(`${API_URL}/categorias`, {
+    const response = await fetch(`${API_URL}/api/categorias`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, label }),
@@ -124,7 +124,7 @@ export const categoriasAPI = {
   },
 
   async deletar(id) {
-    const response = await fetch(`${API_URL}/categorias/${encodeURIComponent(id)}`, {
+    const response = await fetch(`${API_URL}/api/categorias/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Erro ao deletar categoria');
@@ -136,19 +136,19 @@ export const categoriasAPI = {
 
 export const pedidosAPI = {
   async listar() {
-    const response = await fetch(`${API_URL}/pedidos`);
+    const response = await fetch(`${API_URL}/api/pedidos`);
     if (!response.ok) throw new Error('Erro ao listar pedidos');
     return response.json();
   },
 
   async listarPorUsuario(usuario_id) {
-    const response = await fetch(`${API_URL}/pedidos/usuario/${usuario_id}`);
+    const response = await fetch(`${API_URL}/api/pedidos/usuario/${usuario_id}`);
     if (!response.ok) throw new Error('Erro ao listar pedidos do usuário');
     return response.json();
   },
 
   async criar(data) {
-    const response = await fetch(`${API_URL}/pedidos`, {
+    const response = await fetch(`${API_URL}/api/pedidos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -158,7 +158,7 @@ export const pedidosAPI = {
   },
 
   async atualizar(id, status) {
-    const response = await fetch(`${API_URL}/pedidos/${id}`, {
+    const response = await fetch(`${API_URL}/api/pedidos/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -172,14 +172,14 @@ export const pedidosAPI = {
 
 export const ordersAPI = {
   async listar(showAll = false) {
-    const url = showAll ? `${API_URL}/orders?all=true` : `${API_URL}/orders`;
+    const url = showAll ? `${API_URL}/api/orders?all=true` : `${API_URL}/api/orders`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('Erro ao listar pedidos');
     return response.json();
   },
 
   async atualizar(id, data) {
-    const response = await fetch(`${API_URL}/orders/${id}`, {
+    const response = await fetch(`${API_URL}/api/orders/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
