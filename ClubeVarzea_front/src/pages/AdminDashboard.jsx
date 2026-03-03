@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
@@ -40,6 +40,28 @@ export default function AdminDashboard() {
   const completedOrders = orders.filter(o => o.status === 'entregue');
 
   const recentOrders = orders.slice(0, 10);
+
+  // Calcula custo, lucro e margem para cada pedido
+  const ordersWithMetrics = useMemo(() => {
+    return recentOrders.map(order => {
+      const items = Array.isArray(order.items) ? order.items : [];
+      const totalCost = items.reduce((sum, item) => {
+        // Usa preco_custo se disponível, senão usa preço do item
+        const itemCost = (item.preco_custo || item.custo || 0) * (item.quantidade || item.quantity || 1);
+        return sum + itemCost;
+      }, 0);
+      
+      const profit = order.total - totalCost;
+      const margin = order.total > 0 ? ((profit / order.total) * 100).toFixed(1) : 0;
+
+      return {
+        ...order,
+        totalCost: parseFloat(totalCost.toFixed(2)),
+        profit: parseFloat(profit.toFixed(2)),
+        margin: parseFloat(margin),
+      };
+    });
+  }, [recentOrders]);
 
   // Dados para gráfico de vendas por mês
   const salesByMonth = orders.reduce((acc, order) => {
@@ -257,23 +279,53 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentOrders.length === 0 ? (
+              {ordersWithMetrics.length === 0 ? (
                 <p className="text-[#666] text-center py-8">Nenhum pedido ainda</p>
               ) : (
-                recentOrders.map(order => (
-                  <div key={order.id} className="flex items-center justify-between p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
-                    <div className="flex-1">
+                ordersWithMetrics.map(order => (
+                  <div key={order.id} className="flex flex-col p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] space-y-2">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-white font-semibold">#{order.order_number}</span>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[order.status]}`}>
                           {statusLabels[order.status]}
                         </span>
                       </div>
-                      <p className="text-sm text-[#888] mt-1">{order.customer_name}</p>
+                      <span className="text-xs text-[#666]">
+                        {format(new Date(order.created_date), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                      </span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-white font-semibold">R$ {order.total.toFixed(2)}</p>
-                      <p className="text-xs text-[#666]">{order.items?.length || 0} itens</p>
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm text-white">{order.customer_name}</p>
+                        <p className="text-xs text-[#666]">{order.items?.length || 0} itens</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm">
+                          <p className="text-white font-semibold">R$ {order.total.toFixed(2)}</p>
+                          <p className="text-xs text-[#888]">Receita</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-[#2a2a2a]">
+                      <div>
+                        <p className="text-[#666]">Custo</p>
+                        <p className="text-white font-semibold">R$ {order.totalCost.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className={order.profit >= 0 ? "text-[#888]" : "text-red-500"}>Lucro</p>
+                        <p className={order.profit >= 0 ? "text-[#00FF85] font-semibold" : "text-red-400 font-semibold"}>
+                          R$ {order.profit.toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={order.margin >= 0 ? "text-[#888]" : "text-red-500"}>Margem</p>
+                        <p className={order.margin >= 0 ? "text-[#00FF85] font-semibold" : "text-red-400 font-semibold"}>
+                          {order.margin}%
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))
