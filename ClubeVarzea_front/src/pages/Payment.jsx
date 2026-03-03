@@ -39,7 +39,7 @@ export default function Payment() {
     mutationFn: async () => {
       const trackingCode = `BR${Date.now().toString(36).toUpperCase()}CDV`;
       await base44.entities.Order.update(orderId, {
-        payment_status: 'aprovado',
+        payment_status: 'pago',
         status: 'separacao',
         tracking_code: trackingCode,
       });

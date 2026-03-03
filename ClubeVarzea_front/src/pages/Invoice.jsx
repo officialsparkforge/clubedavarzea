@@ -179,7 +179,7 @@ export default function Invoice() {
               <div>
                 <p className="text-[#888] print:text-gray-500">Status</p>
                 <p className="font-medium text-[#00FF85] print:text-green-600">
-                  {order.payment_status === 'aprovado' ? 'Pago' : 'Pendente'}
+                  {order.payment_status === 'pago' ? 'Pago' : 'Pendente'}
                 </p>
               </div>
             </div>

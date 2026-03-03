@@ -52,6 +52,87 @@ const getUserIdentifier = (req) => {
   return getAnonymousId(req) || null;
 };
 
+const ORDER_STATUS_VALUES = new Set(['confirmado', 'separacao', 'enviado', 'saiu_entrega', 'entregue', 'cancelado']);
+const PAYMENT_STATUS_VALUES = new Set(['pendente', 'pago', 'cancelado', 'expirado']);
+
+const normalizeOrderStatus = (value, fallback = 'confirmado') => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+
+  const aliases = {
+    processing: 'separacao',
+    shipped: 'enviado',
+    out_for_delivery: 'saiu_entrega',
+    delivered: 'entregue',
+    cancelled: 'cancelado',
+  };
+
+  const mapped = aliases[normalized] || normalized;
+  return ORDER_STATUS_VALUES.has(mapped) ? mapped : fallback;
+};
+
+const normalizePaymentStatus = (value, fallback = 'pendente') => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+
+  const aliases = {
+    aprovado: 'pago',
+    approved: 'pago',
+    paid: 'pago',
+    pending: 'pendente',
+    canceled: 'cancelado',
+    cancelled: 'cancelado',
+    expired: 'expirado',
+    overdue: 'expirado',
+  };
+
+  const mapped = aliases[normalized] || normalized;
+  return PAYMENT_STATUS_VALUES.has(mapped) ? mapped : fallback;
+};
+
+let paymentStatusEnumCache = null;
+
+const parseEnumValues = (enumType) => {
+  const values = [];
+  const regex = /'([^']+)'/g;
+  let match;
+  while ((match = regex.exec(enumType || '')) !== null) {
+    values.push(match[1]);
+  }
+  return new Set(values);
+};
+
+const getPaymentStatusEnumValues = async (connection) => {
+  if (paymentStatusEnumCache) return paymentStatusEnumCache;
+
+  try {
+    const [rows] = await connection.query("SHOW COLUMNS FROM orders LIKE 'payment_status'");
+    if (rows.length > 0 && rows[0].Type) {
+      paymentStatusEnumCache = parseEnumValues(rows[0].Type);
+      return paymentStatusEnumCache;
+    }
+  } catch (error) {
+    console.warn('⚠️ Não foi possível ler ENUM de payment_status, usando fallback:', error.message);
+  }
+
+  paymentStatusEnumCache = new Set(['pendente', 'pago', 'cancelado', 'expirado']);
+  return paymentStatusEnumCache;
+};
+
+const toDatabasePaymentStatus = async (connection, value, fallback = 'pendente') => {
+  const normalized = normalizePaymentStatus(value, fallback);
+  const enumValues = await getPaymentStatusEnumValues(connection);
+
+  if (enumValues.has(normalized)) return normalized;
+  if (normalized === 'pago' && enumValues.has('aprovado')) return 'aprovado';
+  if (normalized === 'cancelado' && enumValues.has('cancelled')) return 'cancelled';
+  if (normalized === 'expirado' && enumValues.has('expired')) return 'expired';
+  if (normalized === 'pendente' && enumValues.has('pending')) return 'pending';
+
+  if (enumValues.has(fallback)) return fallback;
+  return enumValues.values().next().value || fallback;
+};
+
 const getCartColumnMap = async (connection) => {
   const [columnsRows] = await connection.query('SHOW COLUMNS FROM cart_items');
   const available = new Set(columnsRows.map((row) => row.Field));
@@ -1791,6 +1872,7 @@ app.post('/api/orders', async (req, res) => {
     const normalizedOrderNumber = order_number || req.body.numero_pedido || null;
     const normalizedTotal = total ?? req.body.valor_total;
     const totalNumber = Number(normalizedTotal);
+    const normalizedStatus = normalizeOrderStatus(status, 'confirmado');
 
     if (!normalizedOrderNumber || normalizedTotal === undefined || normalizedTotal === null || Number.isNaN(totalNumber)) {
       return res.status(400).json({ error: 'Numero do pedido e total sao obrigatorios' });
@@ -1800,6 +1882,8 @@ app.post('/api/orders', async (req, res) => {
     const id = uuidv4();
     
     try {
+      const dbPaymentStatus = await toDatabasePaymentStatus(connection, payment_status, 'pendente');
+
       // Process wallet deduction if wallet_id and wallet_discount are provided
       if (wallet_id && wallet_discount && wallet_discount > 0) {
         // Get wallet
@@ -1849,7 +1933,7 @@ app.post('/api/orders', async (req, res) => {
           id,
           createdBy,
           normalizedOrderNumber,
-          status || 'confirmado',
+          normalizedStatus,
           JSON.stringify(items || []),
           subtotal || 0,
           shipping_cost || 0,
@@ -1865,7 +1949,7 @@ app.post('/api/orders', async (req, res) => {
           JSON.stringify(shipping_address || {}),
           shipping_method || null,
           payment_method || null,
-          payment_status || 'pendente',
+          dbPaymentStatus,
           estimated_delivery || null,
         ]
       );
@@ -1881,18 +1965,24 @@ app.post('/api/orders', async (req, res) => {
 });
 
 app.put('/api/orders/:id', async (req, res) => {
+  let connection;
   try {
     const { id } = req.params;
     const { status, payment_status, tracking_code } = req.body;
-    const connection = await pool.getConnection();
+
+    const normalizedStatus = normalizeOrderStatus(status, 'confirmado');
+
+    connection = await pool.getConnection();
+    const dbPaymentStatus = await toDatabasePaymentStatus(connection, payment_status, 'pendente');
     await connection.query(
       `UPDATE orders SET status = ?, payment_status = ?, tracking_code = ?, updated_at = NOW() WHERE id = ?`,
-      [status || 'confirmado', payment_status || 'pendente', tracking_code || null, id]
+      [normalizedStatus, dbPaymentStatus, tracking_code || null, id]
     );
-    connection.release();
     res.json({ message: 'Pedido atualizado' });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
@@ -2282,9 +2372,13 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
     };
     
     console.log('📝 Criando pagamento PIX no Asaas:', { orderId, customer: customer.id, value });
+    console.log('📤 Payload:', JSON.stringify(paymentData, null, 2));
+    
     const response = await asaasAPI.post('/payments', paymentData);
     const payment = response.data;
+    
     console.log('✅ Pagamento criado:', payment.id);
+    console.log('📥 Response completo:', JSON.stringify(payment, null, 2));
     
     // Gerar QR Code PIX com retry (Asaas pode demorar alguns segundos para gerar o QR Code)
     let pixData = null;
@@ -2303,9 +2397,15 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
         const pixResponse = await asaasAPI.get(`/payments/${payment.id}/pixQrCode`);
         pixData = pixResponse.data;
         
+        console.log('📥 QR Code data recebido:', JSON.stringify(pixData, null, 2));
+        
         if (pixData && pixData.payload) {
           console.log('✅ QR Code PIX obtido com sucesso');
+          console.log('🔗 Payload length:', pixData.payload?.length);
+          console.log('🖼️ Image length:', pixData.encodedImage?.length);
           break;
+        } else {
+          console.warn('⚠️ QR Code vazio, tentando novamente...');
         }
       } catch (error) {
         console.error(`❌ Erro na tentativa ${i + 1}:`, error.response?.data || error.message);
@@ -2321,11 +2421,22 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
       throw new Error('QR Code PIX não foi gerado pelo Asaas');
     }
     
+    // Validar formato do PIX Copia e Cola
+    const pixPayload = pixData.payload;
+    if (!pixPayload.startsWith('00020126') && !pixPayload.startsWith('0002010')) {
+      console.warn('⚠️ AVISO: Formato do PIX pode estar inválido!');
+      console.warn('PIX payload:', pixPayload.substring(0, 50) + '...');
+    }
+    
+    console.log('✅ PIX validado - Tamanho do payload:', pixPayload.length);
+    
     // Adicionar prefixo data: se não existir
     let qrCodeImage = pixData.encodedImage;
     if (qrCodeImage && !qrCodeImage.startsWith('data:')) {
       qrCodeImage = `data:image/png;base64,${qrCodeImage}`;
     }
+    
+    console.log('💾 Salvando dados do PIX no banco de dados...');
     
     // Atualizar pedido com dados do Asaas
     const connection = await pool.getConnection();
@@ -2340,6 +2451,9 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
       [customer.id, payment.id, payment.invoiceUrl, pixData.payload, qrCodeImage, orderId]
     );
     connection.release();
+    
+    console.log('✅ Dados salvos no banco!');
+    console.log('📦 Retornando resposta ao cliente...');
     
     res.json({
       success: true,
@@ -2454,6 +2568,7 @@ app.post('/api/asaas/payments/card', async (req, res) => {
     
     // Atualizar pedido com dados do Asaas
     const connection = await pool.getConnection();
+    const dbPaymentStatus = await toDatabasePaymentStatus(connection, payment.status === 'CONFIRMED' ? 'pago' : 'pendente', 'pendente');
     await connection.query(
       `UPDATE orders SET 
         asaas_customer_id = ?, 
@@ -2461,7 +2576,7 @@ app.post('/api/asaas/payments/card', async (req, res) => {
         asaas_invoice_url = ?,
         payment_status = ?
       WHERE id = ?`,
-      [customer.id, payment.id, payment.invoiceUrl, payment.status === 'CONFIRMED' ? 'pago' : 'pendente', orderId]
+      [customer.id, payment.id, payment.invoiceUrl, dbPaymentStatus, orderId]
     );
     connection.release();
     
@@ -2560,6 +2675,7 @@ app.get('/api/asaas/payments/:paymentId', async (req, res) => {
     // Atualizar status do pedido se necessário
     if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED') {
       const connection = await pool.getConnection();
+      const dbPaymentStatus = await toDatabasePaymentStatus(connection, 'pago', 'pendente');
       const [orders] = await connection.query(
         'SELECT id FROM orders WHERE asaas_payment_id = ?',
         [paymentId]
@@ -2568,7 +2684,7 @@ app.get('/api/asaas/payments/:paymentId', async (req, res) => {
       if (orders.length > 0) {
         await connection.query(
           `UPDATE orders SET payment_status = ?, status = ? WHERE asaas_payment_id = ?`,
-          ['pago', 'separacao', paymentId]
+          [dbPaymentStatus, 'separacao', paymentId]
         );
       }
       connection.release();
@@ -2599,6 +2715,7 @@ app.post('/api/webhooks/asaas', async (req, res) => {
     
     if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') {
       const connection = await pool.getConnection();
+      const dbPaymentStatus = await toDatabasePaymentStatus(connection, 'pago', 'pendente');
       const [orders] = await connection.query(
         'SELECT id, customer_email FROM orders WHERE asaas_payment_id = ?',
         [payment.id]
@@ -2609,7 +2726,7 @@ app.post('/api/webhooks/asaas', async (req, res) => {
         
         await connection.query(
           `UPDATE orders SET payment_status = ?, status = ?, updated_at = NOW() WHERE id = ?`,
-          ['pago', 'separacao', order.id]
+          [dbPaymentStatus, 'separacao', order.id]
         );
         
         try {
