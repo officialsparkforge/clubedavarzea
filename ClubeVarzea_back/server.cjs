@@ -709,6 +709,135 @@ app.get('/api/relatorio/lucros', async (req, res) => {
   }
 });
 
+// GET - Análise de custos por produto (BI)
+app.get('/api/admin/analise-custos', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Buscar todos os produtos com seus custos históricos
+    const [produtos] = await connection.query(`
+      SELECT p.id, p.nome, p.preco, p.preco_custo, p.estoque, t.nome as time, c.label as categoria
+      FROM produtos p
+      LEFT JOIN times t ON p.time_id = t.id
+      LEFT JOIN categorias c ON p.categoria_id = c.id
+      ORDER BY p.nome
+    `);
+    
+    // Buscar histórico de custos
+    const [custos] = await connection.query(`
+      SELECT pch.produto_id, pch.custo, pch.venda, pch.data
+      FROM produtos_custos_historico pch
+      ORDER BY pch.produto_id, pch.data DESC
+    `);
+    
+    // Buscar vendas por produto
+    const [orders] = await connection.query(`
+      SELECT o.id as order_id, o.items, o.referral_code, o.created_at, o.status
+      FROM orders o
+      WHERE o.status IN ('confirmado', 'separacao', 'enviado', 'saiu_entrega', 'entregue')
+    `);
+    
+    connection.release();
+    
+    // Criar mapa de custos históricos por produto
+    const custosMap = {};
+    custos.forEach(c => {
+      if (!custosMap[c.produto_id]) {
+        custosMap[c.produto_id] = [];
+      }
+      custosMap[c.produto_id].push({
+        custo: parseFloat(c.custo || 0),
+        venda: parseFloat(c.venda || 0),
+        data: c.data,
+      });
+    });
+    
+    // Processar vendas
+    const vendasPorProduto = {};
+    orders.forEach(order => {
+      let items = [];
+      try {
+        items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+      } catch (e) {
+        items = [];
+      }
+      
+      items.forEach(item => {
+        if (!vendasPorProduto[item.product_id]) {
+          vendasPorProduto[item.product_id] = {
+            quantidade: 0,
+            receita: 0,
+            vendas: [],
+          };
+        }
+        vendasPorProduto[item.product_id].quantidade += item.quantity || 1;
+        vendasPorProduto[item.product_id].receita += (parseFloat(item.price || 0) * (item.quantity || 1));
+        vendasPorProduto[item.product_id].vendas.push({
+          order_id: order.order_id,
+          quantity: item.quantity || 1,
+          price: parseFloat(item.price || 0),
+          referral_code: order.referral_code,
+          date: order.created_at,
+        });
+      });
+    });
+    
+    // Montar resposta com análise de cada produto
+    const analise = produtos.map(p => {
+      const historicoCustomer = custosMap[p.id] || [];
+      const ultimoCusto = historicoCustomer.length > 0 ? historicoCustomer[0] : null;
+      
+      const custoProduto = ultimoCusto?.custo || parseFloat(p.preco_custo || 0);
+      const vendaProduto = ultimoCusto?.venda || parseFloat(p.preco || 0);
+      
+      const vendas = vendasPorProduto[p.id];
+      const quantidade = vendas?.quantidade || 0;
+      const receita = vendas?.receita || 0;
+      
+      const custoTotal = custoProduto * quantidade;
+      const lucroTotal = receita - custoTotal;
+      const margemLucro = vendaProduto > 0 ? ((vendaProduto - custoProduto) / vendaProduto) * 100 : 0;
+      const margemLucroBruta = receita > 0 ? (lucroTotal / receita) * 100 : 0;
+      
+      return {
+        id: p.id,
+        nome: p.nome,
+        time: p.time,
+        categoria: p.categoria,
+        estoque: p.estoque || 0,
+        custo_unitario: custoProduto,
+        preco_venda: vendaProduto,
+        margem_lucro_unitaria: margemLucro,
+        quantidade_vendida: quantidade,
+        receita_total: receita,
+        custo_total: custoTotal,
+        lucro_total: lucroTotal,
+        margem_lucro_bruta: margemLucroBruta,
+        historico_custos: historicoCustomer.slice(0, 5), // Últimos 5 registros
+        vendas: vendas?.vendas || [],
+      };
+    });
+    
+    // Calcular totais
+    const resumo = {
+      total_produtos: produtos.length,
+      quantidade_vendida_total: Object.values(vendasPorProduto).reduce((sum, v) => sum + v.quantidade, 0),
+      receita_total: Object.values(vendasPorProduto).reduce((sum, v) => sum + v.receita, 0),
+      custo_total: analise.reduce((sum, a) => sum + a.custo_total, 0),
+      lucro_total: analise.reduce((sum, a) => sum + a.lucro_total, 0),
+      margem_media: analise.filter(a => a.quantidade_vendida > 0).reduce((sum, a) => sum + a.margem_lucro_bruta, 0) / (analise.filter(a => a.quantidade_vendida > 0).length || 1),
+    };
+    
+    res.json({
+      produtos: analise,
+      resumo: resumo,
+    });
+  } catch (error) {
+    console.error('Erro ao gerar análise de custos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // =============== CUPONS ===============
 
 // GET - Listar cupons
@@ -2632,6 +2761,8 @@ app.post('/api/asaas/payments/boleto', async (req, res) => {
     
     const response = await asaasAPI.post('/payments', paymentData);
     const payment = response.data;
+    
+    console.log('📋 Resposta Asaas Boleto:', JSON.stringify(payment, null, 2));
     
     // Atualizar pedido com dados do Asaas
     const connection = await pool.getConnection();

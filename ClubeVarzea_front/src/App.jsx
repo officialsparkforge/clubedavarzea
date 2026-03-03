@@ -25,6 +25,7 @@ import AdminProducts from '@/pages/AdminProducts';
 import AdminProductForm from '@/pages/AdminProductForm';
 import AdminCoupons from '@/pages/AdminCoupons';
 import AdminSettings from '@/pages/AdminSettings';
+import AdminCosts from '@/pages/AdminCosts';
 import Login from '@/pages/Login';
 import Layout from './Layout';
 
@@ -47,6 +48,7 @@ const pages = {
   AdminProductForm: AdminProductForm,
   AdminCoupons: AdminCoupons,
   AdminSettings: AdminSettings,
+  AdminCosts: AdminCosts,
 };
 
 const LayoutWrapper = ({ children, currentPageName }) => (

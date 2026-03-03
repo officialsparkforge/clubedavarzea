@@ -163,6 +163,45 @@ export default function AdminDashboard() {
           </Card>
         </div>
 
+        {/* Menu Admin */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Link 
+            to="/AdminProducts"
+            className="bg-[#141414] border border-[#2a2a2a] hover:border-[#00FF85]/50 rounded-xl p-6 transition-colors text-center group"
+          >
+            <Settings className="w-8 h-8 mx-auto mb-2 text-[#00FF85] group-hover:text-white transition-colors" />
+            <p className="font-bold">Gerenciar Produtos</p>
+            <p className="text-xs text-[#888]">Editar catálogo</p>
+          </Link>
+
+          <Link 
+            to="/AdminCosts"
+            className="bg-[#141414] border border-[#2a2a2a] hover:border-[#00FF85]/50 rounded-xl p-6 transition-colors text-center group"
+          >
+            <BarChart3 className="w-8 h-8 mx-auto mb-2 text-[#00FF85] group-hover:text-white transition-colors" />
+            <p className="font-bold">Análise de Custos</p>
+            <p className="text-xs text-[#888]">Margem e lucro</p>
+          </Link>
+
+          <Link 
+            to="/AdminCoupons"
+            className="bg-[#141414] border border-[#2a2a2a] hover:border-[#00FF85]/50 rounded-xl p-6 transition-colors text-center group"
+          >
+            <TrendingUp className="w-8 h-8 mx-auto mb-2 text-[#00FF85] group-hover:text-white transition-colors" />
+            <p className="font-bold">Cupons</p>
+            <p className="text-xs text-[#888]">Promoções</p>
+          </Link>
+
+          <Link 
+            to="/AdminSettings"
+            className="bg-[#141414] border border-[#2a2a2a] hover:border-[#00FF85]/50 rounded-xl p-6 transition-colors text-center group"
+          >
+            <Settings className="w-8 h-8 mx-auto mb-2 text-[#00FF85] group-hover:text-white transition-colors" />
+            <p className="font-bold">Configurações</p>
+            <p className="text-xs text-[#888]">Sistema</p>
+          </Link>
+        </div>
+
         {/* Gráficos */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card className="bg-[#141414] border-[#2a2a2a]">

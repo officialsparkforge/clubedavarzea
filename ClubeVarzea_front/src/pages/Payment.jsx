@@ -192,6 +192,7 @@ export default function Payment() {
       });
 
       const payload = await response.json();
+      console.log('🎫 Resposta Boleto:', payload);
       if (!response.ok || payload?.success === false) {
         throw new Error(payload?.error || payload?.details || 'Falha ao gerar boleto');
       }
