@@ -15,7 +15,14 @@ const resolveApiUrl = () => {
   return RAW_API_URL;
 };
 
-const API_URL = resolveApiUrl();
+const ensureApiPrefix = (url) => {
+  const clean = (url || '').replace(/\/$/, '');
+  if (!clean) return '/api';
+  if (clean.endsWith('/api')) return clean;
+  return `${clean}/api`;
+};
+
+const API_URL = ensureApiPrefix(resolveApiUrl());
 
 const getStoredUser = () => {
   try {
@@ -50,7 +57,8 @@ const request = async (path, options = {}) => {
     headers['X-Anonymous-Id'] = getOrCreateAnonymousId();
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const response = await fetch(`${API_URL}${normalizedPath}`, {
     ...options,
     headers,
   });
@@ -61,6 +69,12 @@ const request = async (path, options = {}) => {
   }
 
   if (response.status === 204) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const body = await response.text();
+    throw new Error(`Resposta inesperada do servidor (${contentType || 'sem content-type'}): ${body.slice(0, 120)}`);
+  }
+
   return response.json();
 };
 

@@ -10,6 +10,35 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { base44 } from '@/api/base44Client';
 
+const toNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatCurrency = (value) => toNumber(value).toFixed(2);
+
+const RAW_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const resolveApiUrl = () => {
+  if (typeof window === 'undefined') {
+    return RAW_API_URL;
+  }
+
+  const isHttpsPage = window.location.protocol === 'https:';
+  const isInsecureConfiguredApi = RAW_API_URL.startsWith('http://');
+
+  if (isHttpsPage && isInsecureConfiguredApi) {
+    return window.location.origin;
+  }
+
+  return RAW_API_URL;
+};
+
+const RESOLVED_API_URL = resolveApiUrl().replace(/\/$/, '');
+const API_URL = RESOLVED_API_URL.endsWith('/api')
+  ? RESOLVED_API_URL
+  : `${RESOLVED_API_URL}/api`;
+
 export default function Payment() {
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get('orderId');
@@ -18,6 +47,8 @@ export default function Payment() {
 
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pixData, setPixData] = useState(null);
+  const [customerDocument, setCustomerDocument] = useState('');
   const [cardData, setCardData] = useState({
     number: '',
     name: '',
@@ -35,61 +66,147 @@ export default function Payment() {
     enabled: !!orderId,
   });
 
-  const confirmPaymentMutation = useMutation({
-    mutationFn: async () => {
-      const trackingCode = `BR${Date.now().toString(36).toUpperCase()}CDV`;
-      await base44.entities.Order.update(orderId, {
-        payment_status: 'pago',
-        status: 'separacao',
-        tracking_code: trackingCode,
-      });
-      
-      // Enviar email com nota fiscal
-      const invoiceUrl = `${window.location.origin}${createPageUrl(`Invoice?orderId=${orderId}`)}`;
-      await base44.integrations.Core.SendEmail({
-        to: order.customer_email,
-        subject: `Clube da Várzea - Pedido #${order.order_number} Confirmado!`,
-        body: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: linear-gradient(135deg, #0A0A0A 0%, #1a3a1a 100%); padding: 30px; text-align: center;">
-              <h1 style="color: #00FF85; margin: 0;">🎉 Pedido Confirmado!</h1>
-            </div>
-            <div style="padding: 30px; background: #f5f5f5;">
-              <h2 style="color: #333;">Olá ${order.customer_name},</h2>
-              <p style="color: #666; line-height: 1.6;">
-                Seu pedido #${order.order_number} foi confirmado com sucesso!
-              </p>
-              
-              <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
-                <h3 style="color: #00FF85; margin-top: 0;">Resumo do Pedido</h3>
-                <p style="color: #666;">
-                  <strong>Total:</strong> R$ ${order.total.toFixed(2)}<br>
-                  <strong>Código de Rastreio:</strong> ${trackingCode}<br>
-                  <strong>Previsão de Entrega:</strong> ${new Date(order.estimated_delivery).toLocaleDateString('pt-BR')}
-                </p>
-              </div>
-              
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${invoiceUrl}" style="background: #00FF85; color: black; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-                  Ver Nota Fiscal
-                </a>
-              </div>
-              
-              <p style="color: #999; font-size: 12px; margin-top: 30px;">
-                Você pode acompanhar seu pedido a qualquer momento através do nosso site.
-              </p>
-            </div>
-          </div>
-        `
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['order', orderId]);
+  useEffect(() => {
+    if (order?.payment_status === 'pago') {
       setPaymentConfirmed(true);
+    }
+    if (order?.customer_document) {
+      setCustomerDocument(order.customer_document);
+    }
+  }, [order]);
+
+  const buildCustomerData = () => {
+    const shipping = order?.shipping_address || {};
+
+    return {
+      name: order?.customer_name || '',
+      email: order?.customer_email || '',
+      phone: order?.customer_phone || '',
+      document: customerDocument || order?.customer_document || '',
+      address: shipping.street || '',
+      addressNumber: shipping.number || '',
+      complement: shipping.complement || '',
+      province: shipping.neighborhood || '',
+      city: shipping.city || '',
+      postalCode: shipping.zip_code || '',
+    };
+  };
+
+  const generatePixMutation = useMutation({
+    mutationFn: async () => {
+      const customerData = buildCustomerData();
+      if (!customerData.document) {
+        throw new Error('CPF/CNPJ é obrigatório para gerar PIX');
+      }
+
+      const response = await fetch(`${API_URL}/asaas/payments/pix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          customerData,
+          value: toNumber(order?.total),
+          description: `Pedido #${order?.order_number || orderId}`,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.details || payload?.error || 'Falha ao gerar PIX');
+      }
+
+      return payload;
+    },
+    onSuccess: (payload) => {
+      setPixData(payload.payment);
+      queryClient.invalidateQueries(['order', orderId]);
+      toast.success('PIX gerado com sucesso!');
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erro ao gerar PIX');
     },
   });
 
-  const pixCode = `00020126580014BR.GOV.BCB.PIX0136${orderId}520400005303986540${order?.total?.toFixed(2) || '0.00'}5802BR5925CLUBE DA VARZEA6009SAO PAULO62070503***6304`;
+  const processCardMutation = useMutation({
+    mutationFn: async () => {
+      const customerData = buildCustomerData();
+      if (!customerData.document) {
+        throw new Error('CPF/CNPJ é obrigatório para pagamento com cartão');
+      }
+
+      const [expiryMonth = '', expiryYearRaw = ''] = String(cardData.expiry || '').split('/');
+      const expiryYear = expiryYearRaw.length === 2 ? `20${expiryYearRaw}` : expiryYearRaw;
+
+      const response = await fetch(`${API_URL}/asaas/payments/card`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          customerData,
+          value: toNumber(order?.total),
+          description: `Pedido #${order?.order_number || orderId}`,
+          installments: Number(cardData.installments || 1),
+          cardData: {
+            holderName: cardData.name,
+            number: cardData.number,
+            expiryMonth,
+            expiryYear,
+            ccv: cardData.cvv,
+          },
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.details || 'Falha ao processar cartão');
+      }
+
+      return payload;
+    },
+    onSuccess: async (payload) => {
+      const paymentStatus = payload?.payment?.status;
+      if (paymentStatus === 'CONFIRMED' || paymentStatus === 'RECEIVED') {
+        setPaymentConfirmed(true);
+      } else {
+        toast.success('Pagamento enviado para análise. Aguarde confirmação.');
+      }
+      await queryClient.invalidateQueries(['order', orderId]);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erro ao processar cartão');
+    },
+  });
+
+  const generateBoletoMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${API_URL}/asaas/payments/boleto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          customerData: buildCustomerData(),
+          value: toNumber(order?.total),
+          description: `Pedido #${order?.order_number || orderId}`,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.details || 'Falha ao gerar boleto');
+      }
+
+      return payload;
+    },
+    onSuccess: async () => {
+      toast.success('Boleto gerado com sucesso!');
+      await queryClient.invalidateQueries(['order', orderId]);
+    },
+    onError: (error) => {
+      toast.error(error.message || 'Erro ao gerar boleto');
+    },
+  });
+
+  const pixCode = pixData?.pixQrCode || order?.pix_qr_code || '';
 
   const copyPixCode = () => {
     navigator.clipboard.writeText(pixCode);
@@ -98,15 +215,17 @@ export default function Payment() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Simulate payment confirmation after 5 seconds for PIX
   useEffect(() => {
-    if (order?.payment_method === 'pix' && !paymentConfirmed) {
-      const timer = setTimeout(() => {
-        confirmPaymentMutation.mutate();
-      }, 5000);
-      return () => clearTimeout(timer);
+    if (
+      order?.payment_method === 'pix' &&
+      !order?.asaas_payment_id &&
+      !generatePixMutation.isPending &&
+      !generatePixMutation.isSuccess &&
+      !pixCode
+    ) {
+      generatePixMutation.mutate();
     }
-  }, [order]);
+  }, [order, pixCode]);
 
   if (isLoading || !order) {
     return (
@@ -169,9 +288,19 @@ export default function Payment() {
             </div>
             <div className="text-right">
               <p className="text-sm text-[#888]">Total</p>
-              <p className="text-xl font-bold text-[#00FF85]">R$ {order.total?.toFixed(2)}</p>
+              <p className="text-xl font-bold text-[#00FF85]">R$ {formatCurrency(order.total)}</p>
             </div>
           </div>
+        </div>
+
+        <div className="bg-[#141414] rounded-2xl p-4 border border-[#2a2a2a]">
+          <Label className="text-sm text-[#888]">CPF/CNPJ (obrigatório para pagamento)</Label>
+          <Input
+            value={customerDocument}
+            onChange={(e) => setCustomerDocument(e.target.value)}
+            className="bg-[#1a1a1a] border-[#2a2a2a] text-white focus:border-[#00FF85]/50 mt-1"
+            placeholder="Digite seu CPF ou CNPJ"
+          />
         </div>
 
         {/* PIX Payment */}
@@ -188,18 +317,18 @@ export default function Payment() {
               </div>
               
               {/* QR Code Container */}
-              <div className="bg-white rounded-xl p-4 inline-block mb-4 relative overflow-hidden">
-                <div className="w-48 h-48 bg-gradient-to-br from-[#1a1a1a] to-[#0A0A0A] rounded-lg flex items-center justify-center">
-                  <div className="grid grid-cols-8 gap-1">
-                    {[...Array(64)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-4 h-4 ${Math.random() > 0.5 ? 'bg-black' : 'bg-white'}`}
-                      />
-                    ))}
+              <div className="bg-white rounded-xl p-4 inline-block mb-4 relative overflow-hidden min-h-56 min-w-56">
+                {(pixData?.pixQrCodeImage || order?.pix_qr_code_image) ? (
+                  <img
+                    src={pixData?.pixQrCodeImage || order?.pix_qr_code_image}
+                    alt="QR Code PIX"
+                    className="w-48 h-48 object-contain"
+                  />
+                ) : (
+                  <div className="w-48 h-48 bg-[#f5f5f5] rounded-lg flex items-center justify-center text-[#666] text-sm">
+                    {generatePixMutation.isPending ? 'Gerando QR Code...' : 'QR Code indisponível'}
                   </div>
-                </div>
-                <div className="absolute inset-0 bg-[#00FF85]/10" />
+                )}
               </div>
 
               <p className="text-sm text-[#888] mb-4">
@@ -208,8 +337,9 @@ export default function Payment() {
 
               {/* PIX Code */}
               <div className="bg-[#1a1a1a] rounded-xl p-3 flex items-center gap-2">
-                <code className="flex-1 text-xs text-[#888] truncate">{pixCode.slice(0, 50)}...</code>
+                <code className="flex-1 text-xs text-[#888] truncate">{pixCode ? `${pixCode.slice(0, 50)}...` : 'Gerando código PIX...'}</code>
                 <button
+                  disabled={!pixCode}
                   onClick={copyPixCode}
                   className="p-2 hover:bg-[#2a2a2a] rounded-lg transition-colors"
                 >
@@ -220,12 +350,12 @@ export default function Payment() {
               {/* Timer */}
               <div className="flex items-center justify-center gap-2 mt-4 text-[#888]">
                 <Clock className="w-4 h-4 animate-pulse" />
-                <span className="text-sm">Aguardando pagamento...</span>
+                <span className="text-sm">Aguardando pagamento real no Asaas...</span>
               </div>
             </div>
 
             <div className="text-center text-sm text-[#888]">
-              <p>O pagamento será confirmado automaticamente</p>
+              <p>A confirmação acontece após o Asaas aprovar o pagamento</p>
             </div>
           </motion.div>
         )}
@@ -292,7 +422,7 @@ export default function Payment() {
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
                       <option key={i} value={i}>
-                        {i}x de R$ {(order.total / i).toFixed(2)} sem juros
+                        {i}x de R$ {(toNumber(order.total) / i).toFixed(2)} sem juros
                       </option>
                     ))}
                   </select>
@@ -301,11 +431,11 @@ export default function Payment() {
             </div>
 
             <NeonButton 
-              onClick={() => confirmPaymentMutation.mutate()} 
-              disabled={confirmPaymentMutation.isPending}
+              onClick={() => processCardMutation.mutate()} 
+              disabled={processCardMutation.isPending}
               className="w-full py-4"
             >
-              {confirmPaymentMutation.isPending ? 'Processando...' : 'Pagar Agora'}
+              {processCardMutation.isPending ? 'Processando...' : 'Pagar Agora'}
             </NeonButton>
           </motion.div>
         )}
@@ -330,18 +460,17 @@ export default function Payment() {
               <div className="bg-[#1a1a1a] rounded-xl p-4 mb-4">
                 <p className="text-xs text-[#888] mb-2">Código de barras</p>
                 <code className="text-sm break-all">
-                  23793.38128 60000.000003 00000.000400 1 92850000{(order.total * 100).toFixed(0)}
+                  23793.38128 60000.000003 00000.000400 1 92850000{(toNumber(order.total) * 100).toFixed(0)}
                 </code>
               </div>
 
               <NeonButton 
                 onClick={() => {
-                  toast.success('Boleto gerado! Download iniciado.');
-                  confirmPaymentMutation.mutate();
+                  generateBoletoMutation.mutate();
                 }}
                 className="w-full"
               >
-                Gerar Boleto PDF
+                {generateBoletoMutation.isPending ? 'Gerando...' : 'Gerar Boleto PDF'}
               </NeonButton>
             </div>
           </motion.div>

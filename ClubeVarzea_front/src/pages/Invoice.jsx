@@ -9,6 +9,13 @@ import { ptBR } from 'date-fns/locale';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 
+const toNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatCurrency = (value) => toNumber(value).toFixed(2);
+
 export default function Invoice() {
   const urlParams = new URLSearchParams(window.location.search);
   const orderId = urlParams.get('orderId');
@@ -159,7 +166,7 @@ export default function Invoice() {
               <div>
                 <p className="text-[#888] print:text-gray-500">Data do Pedido</p>
                 <p className="font-medium">
-                  {format(new Date(order.created_date), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+                  {format(new Date(order.created_at || order.created_date || Date.now()), "dd 'de' MMMM, yyyy", { locale: ptBR })}
                 </p>
               </div>
               <div>
@@ -210,8 +217,8 @@ export default function Invoice() {
                       </td>
                       <td className="py-3 text-center">{item.size}</td>
                       <td className="py-3 text-center">{item.quantity}</td>
-                      <td className="py-3 text-right">R$ {item.price?.toFixed(2)}</td>
-                      <td className="py-3 text-right font-medium">R$ {(item.price * item.quantity).toFixed(2)}</td>
+                      <td className="py-3 text-right">R$ {formatCurrency(item.price)}</td>
+                      <td className="py-3 text-right font-medium">R$ {formatCurrency(toNumber(item.price) * toNumber(item.quantity))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -224,21 +231,21 @@ export default function Invoice() {
             <div className="max-w-xs ml-auto space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-[#888] print:text-gray-500">Subtotal</span>
-                <span>R$ {order.subtotal?.toFixed(2)}</span>
+                <span>R$ {formatCurrency(order.subtotal)}</span>
               </div>
-              {order.discount > 0 && (
+              {toNumber(order.discount) > 0 && (
                 <div className="flex justify-between text-sm text-[#00FF85] print:text-green-600">
                   <span>Desconto</span>
-                  <span>-R$ {order.discount?.toFixed(2)}</span>
+                  <span>-R$ {formatCurrency(order.discount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm">
                 <span className="text-[#888] print:text-gray-500">Frete</span>
-                <span>{order.shipping_cost === 0 ? 'Grátis' : `R$ ${order.shipping_cost?.toFixed(2)}`}</span>
+                <span>{toNumber(order.shipping_cost) === 0 ? 'Grátis' : `R$ ${formatCurrency(order.shipping_cost)}`}</span>
               </div>
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-[#2a2a2a] print:border-gray-200">
                 <span>Total</span>
-                <span className="text-[#00FF85] print:text-green-600">R$ {order.total?.toFixed(2)}</span>
+                <span className="text-[#00FF85] print:text-green-600">R$ {formatCurrency(order.total)}</span>
               </div>
             </div>
           </div>
