@@ -2202,6 +2202,15 @@ async function getOrCreateAsaasCustomer(customerData) {
   }
 }
 
+/**
+ * VALORES VÁLIDOS DOS ENUMS DO BANCO DE DADOS
+ * 
+ * payment_status: 'pendente' | 'pago' | 'cancelado' | 'expirado'
+ * status: 'confirmado' | 'separacao' | 'enviado' | 'saiu_entrega' | 'entregue' | 'cancelado'
+ * 
+ * IMPORTANTE: Use apenas estes valores para evitar erros de "Data truncated"
+ */
+
 // Helper: Calcular taxas de parcelamento do Asaas
 function getAsaasInstallmentFee(installments) {
   const fees = {
@@ -2452,7 +2461,7 @@ app.post('/api/asaas/payments/card', async (req, res) => {
         asaas_invoice_url = ?,
         payment_status = ?
       WHERE id = ?`,
-      [customer.id, payment.id, payment.invoiceUrl, payment.status === 'CONFIRMED' ? 'aprovado' : 'pendente', orderId]
+      [customer.id, payment.id, payment.invoiceUrl, payment.status === 'CONFIRMED' ? 'pago' : 'pendente', orderId]
     );
     connection.release();
     
@@ -2559,7 +2568,7 @@ app.get('/api/asaas/payments/:paymentId', async (req, res) => {
       if (orders.length > 0) {
         await connection.query(
           `UPDATE orders SET payment_status = ?, status = ? WHERE asaas_payment_id = ?`,
-          ['aprovado', 'separacao', paymentId]
+          ['pago', 'separacao', paymentId]
         );
       }
       connection.release();
@@ -2600,7 +2609,7 @@ app.post('/api/webhooks/asaas', async (req, res) => {
         
         await connection.query(
           `UPDATE orders SET payment_status = ?, status = ?, updated_at = NOW() WHERE id = ?`,
-          ['aprovado', 'separacao', order.id]
+          ['pago', 'separacao', order.id]
         );
         
         try {
