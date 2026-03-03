@@ -71,13 +71,21 @@ export default function AdminCosts() {
 
   const updateCostMutation = useMutation({
     mutationFn: async ({ productId, newCost }) => {
-      const response = await fetch(`${API_URL}/produtos/${productId}`, {
+      console.log('🚀 Sending mutation to API:', { productId, newCost });
+      const response = await fetch(`${API_URL}/produtos/${productId}/custo`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preco_custo: parseFloat(newCost) }),
       });
-      if (!response.ok) throw new Error('Erro ao atualizar custo');
-      return response.json();
+      console.log('📦 Response status:', response.status);
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('❌ Error response:', error);
+        throw new Error(error.error || 'Erro ao atualizar custo');
+      }
+      const data = await response.json();
+      console.log('✅ Success response:', data);
+      return data;
     },
     onSuccess: () => {
       toast.success('Custo atualizado com sucesso!');
@@ -86,6 +94,7 @@ export default function AdminCosts() {
       setEditCost('');
     },
     onError: (error) => {
+      console.error('🔴 Mutation error:', error);
       toast.error(error.message || 'Erro ao atualizar custo');
     },
   });
@@ -95,6 +104,7 @@ export default function AdminCosts() {
       toast.error('Digite um valor válido');
       return;
     }
+    console.log('💾 Salvando custo:', { productId, newCost: parseFloat(editCost) });
     updateCostMutation.mutate({ productId, newCost: editCost });
   };
 
@@ -420,10 +430,10 @@ export default function AdminCosts() {
                   <div className="grid grid-cols-2 md:grid-cols-10 gap-3 items-center">
                     <div className="md:col-span-2">
                       <p className="font-bold truncate">{product.nome}</p>
-                      <p className="text-xs text-[#888]">
-                        {product.time && <Badge variant="outline" className="mr-2 text-xs">{product.time}</Badge>}
-                        {product.categoria && <Badge variant="outline" className="text-xs">{product.categoria}</Badge>}
-                      </p>
+                      <div className="text-xs text-[#888] flex gap-2 items-center flex-wrap mt-1">
+                        {product.time && <Badge className="text-white bg-[#1a1a1a] border border-[#00FF85] text-xs">{product.time}</Badge>}
+                        {product.categoria && <Badge className="text-white bg-[#1a1a1a] border border-[#00FF85] text-xs">{product.categoria}</Badge>}
+                      </div>
                     </div>
 
                     <div className="text-center">
