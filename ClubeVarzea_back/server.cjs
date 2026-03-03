@@ -165,6 +165,33 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
+// Verificar e adicionar coluna preco_custo se não existir
+(async () => {
+  try {
+    const connection = await pool.getConnection();
+    
+    // Verificar se a coluna preco_custo existe
+    const [columns] = await connection.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'produtos' AND COLUMN_NAME = 'preco_custo'",
+      [process.env.DB_NAME || 'clube_varzea']
+    );
+    
+    if (columns.length === 0) {
+      console.log('⚙️ Adicionando coluna preco_custo à tabela produtos...');
+      await connection.query(
+        'ALTER TABLE produtos ADD COLUMN preco_custo DECIMAL(10,2) DEFAULT 0 AFTER preco_original'
+      );
+      console.log('✅ Coluna preco_custo adicionada com sucesso');
+    } else {
+      console.log('✅ Coluna preco_custo já existe');
+    }
+    
+    connection.release();
+  } catch (error) {
+    console.error('❌ Erro ao verificar/adicionar coluna preco_custo:', error.message);
+  }
+})();
+
 // =============== CEP (VIACEP PROXY) ===============
 
 app.get('/api/cep/:cep', async (req, res) => {
