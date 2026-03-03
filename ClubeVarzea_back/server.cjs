@@ -17,13 +17,21 @@ require('dotenv').config();
   const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
   // Initialize Asaas API
+  const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+  
+  // Validar se a API Key do Asaas está configurada
+  if (!ASAAS_API_KEY || ASAAS_API_KEY.includes('key_here')) {
+    console.warn('⚠️  AVISO: ASAAS_API_KEY não está configurada corretamente!');
+    console.warn('Configure uma chave válida no arquivo .env');
+  }
+  
   const asaasAPI = axios.create({
     baseURL: process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3',
     headers: {
-      'access_token': process.env.ASAAS_API_KEY,
+      'access_token': ASAAS_API_KEY,
       'Content-Type': 'application/json',
     },
-});
+  });
 
 const parseJson = (value, fallback) => {
   if (value === null || value === undefined) return fallback;
@@ -2203,6 +2211,37 @@ function getAsaasInstallmentFee(installments) {
   return fees[installments] || 0;
 }
 
+// GET - Testar conexão com Asaas
+app.get('/api/asaas/test', async (req, res) => {
+  try {
+    // Verificar se a API key está configurada
+    if (!ASAAS_API_KEY || ASAAS_API_KEY.includes('key_here')) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'ASAAS_API_KEY não está configurada',
+        message: 'Configure uma chave válida do Asaas no arquivo .env'
+      });
+    }
+    
+    // Testar chamada à API do Asaas
+    const response = await asaasAPI.get('/customers?limit=1');
+    
+    res.json({ 
+      success: true, 
+      message: 'Conexão com Asaas OK',
+      apiUrl: asaasAPI.defaults.baseURL,
+      apiKeyConfigured: true
+    });
+  } catch (error) {
+    console.error('❌ Erro ao testar Asaas:', error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false,
+      error: 'Falha na conexão com Asaas', 
+      details: error.response?.data || error.message
+    });
+  }
+});
+
 // POST - Criar cliente no Asaas
 app.post('/api/asaas/customers', async (req, res) => {
   try {
@@ -2233,12 +2272,45 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
       externalReference: orderId,
     };
     
+    console.log('📝 Criando pagamento PIX no Asaas:', { orderId, customer: customer.id, value });
     const response = await asaasAPI.post('/payments', paymentData);
     const payment = response.data;
+    console.log('✅ Pagamento criado:', payment.id);
     
-    // Gerar QR Code PIX
-    const pixResponse = await asaasAPI.get(`/payments/${payment.id}/pixQrCode`);
-    const pixData = pixResponse.data;
+    // Gerar QR Code PIX com retry (Asaas pode demorar alguns segundos para gerar o QR Code)
+    let pixData = null;
+    let maxRetries = 5;
+    let retryDelay = 2000; // 2 segundos
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        console.log(`🔄 Tentativa ${i + 1}/${maxRetries} de obter QR Code PIX...`);
+        
+        if (i > 0) {
+          // Aguardar antes de tentar novamente (exceto na primeira tentativa)
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+        
+        const pixResponse = await asaasAPI.get(`/payments/${payment.id}/pixQrCode`);
+        pixData = pixResponse.data;
+        
+        if (pixData && pixData.payload) {
+          console.log('✅ QR Code PIX obtido com sucesso');
+          break;
+        }
+      } catch (error) {
+        console.error(`❌ Erro na tentativa ${i + 1}:`, error.response?.data || error.message);
+        
+        if (i === maxRetries - 1) {
+          // Última tentativa falhou
+          throw new Error(`Falha ao obter QR Code após ${maxRetries} tentativas: ${error.response?.data?.errors?.[0]?.description || error.message}`);
+        }
+      }
+    }
+    
+    if (!pixData || !pixData.payload) {
+      throw new Error('QR Code PIX não foi gerado pelo Asaas');
+    }
     
     // Adicionar prefixo data: se não existir
     let qrCodeImage = pixData.encodedImage;
@@ -2273,10 +2345,20 @@ app.post('/api/asaas/payments/pix', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao criar cobrança PIX:', error.message);
+    console.error('Detalhes do erro:', error.response?.data || error);
     console.error('Stack:', error.stack);
+    
+    // Extrair mensagem de erro do Asaas
+    const errorMessage = error.response?.data?.errors?.[0]?.description || 
+                        error.response?.data?.message || 
+                        error.message || 
+                        'Erro desconhecido ao gerar PIX';
+    
     res.status(500).json({ 
+      success: false,
       error: 'Falha ao gerar PIX', 
-      details: error.message
+      details: errorMessage,
+      asaasError: error.response?.data
     });
   }
 });
